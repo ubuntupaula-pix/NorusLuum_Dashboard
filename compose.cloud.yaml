@@ -1,0 +1,98 @@
+# Despliegue contra PostgreSQL gestionado en la nube (Neon, Supabase, RDS,
+# Render, Railway…). Requiere DATABASE_URL en .env con SSL.
+#
+#   docker compose -f compose.cloud.yaml up -d --build
+#
+# No levanta PostgreSQL local: el esquema se aplica con Alembic y los datos
+# se copian con `python -m scripts.migrate_to_cloud`.
+
+x-app-env: &app-env
+  NORUS_ENV: production
+  NORUS_PUBLIC_URL: ${NORUS_PUBLIC_URL:?Define NORUS_PUBLIC_URL en .env}
+  NORUS_JWT_SECRET: ${NORUS_JWT_SECRET:?Genera un secreto JWT en .env}
+  NORUS_ENCRYPTION_KEY: ${NORUS_ENCRYPTION_KEY:?Genera una clave Fernet en .env}
+  NORUS_TOKEN_EXPIRY: ${NORUS_TOKEN_EXPIRY:-30}
+  NORUS_PASSWORD_MIN_LENGTH: ${NORUS_PASSWORD_MIN_LENGTH:-12}
+  NORUS_COOKIE_SECURE: ${NORUS_COOKIE_SECURE:-true}
+  NORUS_JWT_ISSUER: ${NORUS_JWT_ISSUER:-norus-intelligence}
+  NORUS_JWT_AUDIENCE: ${NORUS_JWT_AUDIENCE:-norus-dashboard}
+  NORUS_UPLOAD_MAX_BYTES: ${NORUS_UPLOAD_MAX_BYTES:-536870912}
+  NORUS_IMPORT_MAX_ROWS: ${NORUS_IMPORT_MAX_ROWS:-1000000}
+  NORUS_MARKET_IMPORT_MAX_BYTES: ${NORUS_MARKET_IMPORT_MAX_BYTES:-536870912}
+  NORUS_DEFAULT_CURRENCY: ${NORUS_DEFAULT_CURRENCY:-CLP}
+  NORUS_CORS_ORIGINS: ${NORUS_CORS_ORIGINS:-}
+  NORUS_SSO_ISSUER: ${NORUS_SSO_ISSUER:-}
+  NORUS_SSO_CLIENT_ID: ${NORUS_SSO_CLIENT_ID:-}
+  NORUS_SSO_CLIENT_SECRET: ${NORUS_SSO_CLIENT_SECRET:-}
+  NORUS_SSO_REDIRECT_URI: ${NORUS_SSO_REDIRECT_URI:-}
+  NORUS_SSO_SCOPES: ${NORUS_SSO_SCOPES:-openid email profile}
+  DATABASE_URL: ${DATABASE_URL:?Define la cadena de PostgreSQL en .env}
+  NORUS_DB_SSLMODE: ${NORUS_DB_SSLMODE:-require}
+  NORUS_DB_CONNECT_TIMEOUT: ${NORUS_DB_CONNECT_TIMEOUT:-10}
+  NORUS_DB_POOL_SIZE: ${NORUS_DB_POOL_SIZE:-10}
+  NORUS_DB_MAX_OVERFLOW: ${NORUS_DB_MAX_OVERFLOW:-20}
+
+services:
+  migrate:
+    build: .
+    environment:
+      <<: *app-env
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+
+  api:
+    build: .
+    environment:
+      <<: *app-env
+    expose: ["8765"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/api/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 25s
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  backup:
+    image: postgres:18-alpine
+    environment:
+      CLOUD_DATABASE_URL: ${DATABASE_URL:?Define la cadena de PostgreSQL en .env}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        url=$$(printf '%s' "$$CLOUD_DATABASE_URL" | sed 's#postgresql+psycopg://#postgresql://#')
+        while true; do
+          stamp=$$(date -u +%Y%m%dT%H%M%SZ)
+          pg_dump --dbname="$$url" --format=custom --file="/backups/norus_$$stamp.dump"
+          find /backups -type f -name 'norus_*.dump' -mtime +"$$BACKUP_RETENTION_DAYS" -delete
+          sleep 86400
+        done
+    volumes:
+      - backup_data:/backups
+    restart: unless-stopped
+
+  proxy:
+    image: caddy:2-alpine
+    environment:
+      DOMAIN: ${DOMAIN:?Define un dominio público en .env}
+      ACME_EMAIL: ${ACME_EMAIL:?Define el correo de administración TLS en .env}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [api]
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:
+  backup_data:

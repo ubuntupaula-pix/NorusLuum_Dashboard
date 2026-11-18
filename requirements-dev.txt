@@ -1,0 +1,4 @@
+# Herramientas de desarrollo y pruebas (no necesarias en producción).
+-r requirements.txt
+pytest>=9.0,<10.0
+httpx>=0.28,<1.0

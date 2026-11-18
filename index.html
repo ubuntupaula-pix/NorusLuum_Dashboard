@@ -1,0 +1,906 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Norus Intelligence Platform · Dashboard Hotelero</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body class="auth-pending">
+    <div class="auth-loading" id="authLoading" role="status" aria-live="polite">
+        <div class="auth-loading-card">
+            <div class="brand-logo">N&amp;L</div>
+            <p>Validando sesión…</p>
+        </div>
+    </div>
+    <!-- ===== SIDEBAR ===== -->
+    <aside class="sidebar" id="sidebar">
+        <div class="brand">
+            <div class="brand-logo">N&amp;L</div>
+            <div class="brand-text">
+                <h1>Norus &amp; Luum</h1>
+                <span>Hotel Management Suite</span>
+            </div>
+        </div>
+        <nav class="nav">
+            <button class="nav-item active" data-view="resumen" title="Resumen Ejecutivo">
+                <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></span><span>Resumen Ejecutivo</span>
+            </button>
+            <button class="nav-item" data-view="ocupacion" title="Ocupación y Tarifas">
+                <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/></svg></span><span>Ocupación y Tarifas</span>
+            </button>
+            <button class="nav-item" data-view="habitaciones" title="Desempeño por tipo de habitación">
+                <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 20V9a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v11"/><path d="M3 20h18"/><path d="M7 7V5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v2"/><path d="M13 11h3"/></svg></span><span>Habitaciones</span>
+            </button>
+            <button class="nav-item" data-view="ingresos" title="Ingresos y Canales">
+                <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18M7 15h4"/></svg></span><span>Ingresos y Canales</span>
+            </button>
+            <button class="nav-item" data-view="reservas" title="Anticipación y Nacionalidad">
+                <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 11h18"/></svg></span><span>Reservas y Mercados</span>
+            </button>
+            <button class="nav-item" data-view="marca" title="Comparación por propiedad">
+                <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21V6l8-3 8 3v15"/><path d="M9 21v-4h6v4"/><path d="M9 9h.01M15 9h.01M9 13h.01M15 13h.01"/></svg></span><span>Comparativa por propiedad</span>
+            </button>
+            <button class="nav-item" data-view="mercado" title="Benchmark con el mercado hotelero">
+                <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M6 21V13"/><path d="M12 21V4"/><path d="M18 21V9"/><path d="M4 10l6-6 5 4 5-5"/></svg></span><span>Mercado</span>
+            </button>
+            <button class="nav-item" data-view="incidencias" title="Incidencias y Satisfacción">
+                <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 18l-5.9 3 1.2-6.5L2.5 9.9 9.1 9z"/></svg></span><span>Incidencias y Satisfacción</span>
+            </button>
+            <button class="nav-item" data-view="operaciones" title="Operación hotelera diaria">
+                <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="8" cy="18" r="2"/></svg></span><span>Operación Hotelera</span>
+            </button>
+            <button class="nav-item" data-view="base" title="Gestión de Base de Datos (CRUD)">
+                <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg></span><span>Base de Datos</span>
+            </button>
+            <button class="nav-item" data-view="auditoria" title="Registro de actividad y seguridad">
+                <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M9 12l2 2 4-4"/></svg></span><span>Auditoría</span>
+            </button>
+            <button class="nav-item" data-view="seguridad" title="Seguridad, MFA y permisos">
+                <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg></span><span>Seguridad y Acceso</span>
+            </button>
+        </nav>
+        <div class="sidebar-foot">
+            <div class="period-select">
+                <label for="granularidad">Agrupar por</label>
+                <select id="granularidad" aria-label="Agrupar métricas por">
+                    <option value="dia">Día</option>
+                    <option value="semana">Semana</option>
+                    <option value="mes" selected>Mes</option>
+                    <option value="anio">Año</option>
+                </select>
+            </div>
+            <div class="period-select">
+                <label for="desde">Desde</label>
+                <input type="date" id="desde" aria-label="Fecha desde">
+            </div>
+            <div class="period-select">
+                <label for="hasta">Hasta</label>
+                <input type="date" id="hasta" aria-label="Fecha hasta">
+            </div>
+            <div class="period-select">
+                <label for="propiedad">Propiedad</label>
+                <select id="propiedad" aria-label="Filtrar por propiedad">
+                    <option value="">Todas las propiedades</option>
+                </select>
+            </div>
+            <div class="period-select">
+                <label for="moneda">Moneda de análisis</label>
+                <select id="moneda"><option value="CLP">CLP</option></select>
+            </div>
+            <div class="estado" id="estadoPMS">
+                <span class="dot"></span> <span id="estadoTexto">Sin integración directa al PMS · importa una exportación</span>
+            </div>
+        </div>
+    </aside>
+
+    <!-- ===== MAIN ===== -->
+    <main class="main">
+        <header class="topbar">
+            <button class="menu-toggle" id="menuToggle" aria-label="Abrir menú"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+            <div class="topbar-title">
+                <h2 id="viewTitle">Resumen Ejecutivo</h2>
+                <p id="viewSubtitle">Indicadores consolidados de gestión comercial y operativa</p>
+            </div>
+            <div class="topbar-actions">
+                <button class="btn btn-upload" id="btnUpload"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M4 20h16"/></svg><span>Subir Datos</span></button>
+                <button class="btn btn-export" id="btnExport"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9V3h12v6"/><rect x="4" y="9" width="16" height="8" rx="2"/><path d="M8 17h8v4H8z"/></svg><span>Imprimir / PDF</span></button>
+                <button class="btn btn-export" id="btnCSV"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v12"/><path d="M7 11l5 5 5-5"/><path d="M4 20h16"/></svg><span>CSV</span></button>
+                <div class="user-badge">
+                    <div class="avatar">AD</div>
+                    <button class="btn btn-logout" id="btnLogout" title="Cerrar sesión">Salir</button>
+                </div>
+            </div>
+        </header>
+
+        <div class="data-alert" id="dataAlert" role="status" hidden>
+            <div>
+                <strong>Aún no hay métricas cargadas.</strong>
+                <span>Importa una exportación autorizada del PMS para activar los indicadores comerciales. Los módulos de operación hotelera funcionan de forma independiente.</span>
+            </div>
+            <button class="btn btn-primary" type="button" id="dataAlertUpload">Importar datos</button>
+        </div>
+
+        <!-- ===== VIEW: RESUMEN ===== -->
+        <section class="view active" id="view-resumen">
+            <div class="kpi-grid" id="kpiResumen"></div>
+            <div class="grid-2">
+                <div class="card">
+                    <div class="card-head">
+                        <h3 id="titleIngresos">Ingresos Mensuales</h3>
+                        <span class="badge">RevPAR</span>
+                    </div>
+                    <canvas id="chartIngresos"></canvas>
+                </div>
+                <div class="card">
+                    <div class="card-head">
+                        <h3 id="titleOcupacionTarifa">Ocupación vs Tarifa Promedio</h3>
+                        <span class="badge">Combinado</span>
+                    </div>
+                    <canvas id="chartOcupacionTarifa"></canvas>
+                </div>
+            </div>
+            <div class="grid-3">
+                <div class="card">
+                    <div class="card-head"><h3>Participación por Canal</h3></div>
+                    <canvas id="chartCanales"></canvas>
+                </div>
+                <div class="card">
+                    <div class="card-head"><h3>Nacionalidades</h3></div>
+                    <canvas id="chartNacionalidad"></canvas>
+                </div>
+                <div class="card">
+                    <div class="card-head"><h3>Puntuación NPS</h3></div>
+                    <div class="nps-box">
+                        <div class="nps-score" id="npsScore">72</div>
+                        <div class="nps-label">Índice NPS</div>
+                        <div class="nps-gauge"><span id="npsGaugeFill"></span></div>
+                        <p class="nps-legend">Promotores <b id="npsPromotores">58%</b> · Neutros <b id="npsNeutros">33%</b> · Detractores <b id="npsDetractores">9%</b></p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===== VIEW: OCUPACIÓN ===== -->
+        <section class="view" id="view-ocupacion">
+            <div class="kpi-grid" id="kpiOcupacion"></div>
+            <div class="grid-2">
+                <div class="card">
+                    <div class="card-head"><h3 id="titleOcupacionMes">Ocupación por Mes</h3><span class="badge">%</span></div>
+                    <canvas id="chartOcupacionMes"></canvas>
+                </div>
+                <div class="card">
+                    <div class="card-head"><h3 id="titleADR">ADR vs RevPAR</h3><span class="badge" data-currency-label>Moneda</span></div>
+                    <canvas id="chartADR"></canvas>
+                </div>
+            </div>
+            <div class="grid-2">
+                <div class="card">
+                    <div class="card-head"><h3>Tarifa Promedio por Segmento</h3></div>
+                    <canvas id="chartTarifaSegmento"></canvas>
+                </div>
+                <div class="card">
+                    <div class="card-head"><h3>Ocupación por Día de Semana</h3></div>
+                    <canvas id="chartDiaSemana"></canvas>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===== VIEW: INGRESOS ===== -->
+        <section class="view" id="view-ingresos">
+            <div class="kpi-grid" id="kpiIngresos"></div>
+            <div class="grid-2">
+                <div class="card">
+                    <div class="card-head"><h3>Ingresos por Canal de Venta</h3></div>
+                    <canvas id="chartIngresosCanal"></canvas>
+                </div>
+                <div class="card">
+                    <div class="card-head"><h3>Aportación por Canal (%)</h3></div>
+                    <canvas id="chartAportacionCanal"></canvas>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-head"><h3>Ingresos por Tipo de Habitación</h3></div>
+                <canvas id="chartIngresosHabitacion"></canvas>
+            </div>
+        </section>
+
+        <!-- ===== VIEW: RESERVAS ===== -->
+        <section class="view" id="view-reservas">
+            <div class="kpi-grid" id="kpiReservas"></div>
+            <div class="grid-2">
+                <div class="card">
+                    <div class="card-head"><h3>Anticipación de Reservas (Días)</h3></div>
+                    <canvas id="chartAnticipacion"></canvas>
+                </div>
+                <div class="card">
+                    <div class="card-head"><h3>Nacionalidad de Huéspedes</h3></div>
+                    <canvas id="chartNacionalidad2"></canvas>
+                </div>
+            </div>
+            <div class="grid-2">
+                <div class="card">
+                    <div class="card-head"><h3>Distribución por Nacionalidad</h3></div>
+                    <canvas id="chartNacionalidadTorta"></canvas>
+                </div>
+                <div class="card">
+                    <div class="card-head"><h3>Anticipación por Canal</h3></div>
+                    <canvas id="chartAnticipacionCanal"></canvas>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===== VIEW: COMPARATIVA POR PROPIEDAD ===== -->
+        <section class="view" id="view-marca">
+            <div class="kpi-grid" id="kpiMarca"></div>
+            <div class="grid-2">
+                <div class="card">
+                    <div class="card-head"><h3>Ocupación Mensual por Marca</h3><span class="badge">%</span></div>
+                    <canvas id="chartOcupacionMarca"></canvas>
+                </div>
+                <div class="card">
+                    <div class="card-head"><h3>Tarifa Promedio (ADR) por Marca</h3><span class="badge" data-currency-label>Moneda</span></div>
+                    <canvas id="chartADRMarca"></canvas>
+                </div>
+            </div>
+            <div class="grid-2">
+                <div class="card">
+                    <div class="card-head"><h3>Ingresos Mensuales por Marca</h3><span class="badge" data-currency-label>Moneda</span></div>
+                    <canvas id="chartIngresosMarca"></canvas>
+                </div>
+                <div class="card">
+                    <div class="card-head"><h3>Estacionalidad por segmento (reservas por mes)</h3><span class="badge">demanda</span></div>
+                    <canvas id="chartEstacionalidad"></canvas>
+                </div>
+            </div>
+            <div class="grid-2">
+                <div class="card">
+                    <div class="card-head"><h3>ADR y ocupación mensual</h3><span class="badge">revenue</span></div>
+                    <canvas id="chartRevenue"></canvas>
+                </div>
+                <div class="card">
+                    <div class="card-head"><h3>Mix de Nacionalidades por Marca</h3><span class="badge">mercado</span></div>
+                    <canvas id="chartNacionalidadMarca"></canvas>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-head"><h3>Participación de Ingresos por Marca (Unificación)</h3><span class="badge">visión consolidada</span></div>
+                <canvas id="chartIngresosTortaMarca"></canvas>
+            </div>
+        </section>
+
+        <!-- ===== VIEW: INCIDENCIAS ===== -->
+        <section class="view" id="view-incidencias">
+            <div class="kpi-grid" id="kpiIncidencias"></div>
+            <div class="grid-2">
+                <div class="card">
+                    <div class="card-head"><h3>Incidencias por Tipo</h3></div>
+                    <canvas id="chartIncidencias"></canvas>
+                </div>
+                <div class="card">
+                    <div class="card-head"><h3>Tiempo de Resolución (Horas)</h3></div>
+                    <canvas id="chartResolucion"></canvas>
+                </div>
+            </div>
+            <div class="grid-2">
+                <div class="card">
+                    <div class="card-head"><h3>Satisfacción por Área</h3></div>
+                    <canvas id="chartSatisfaccionArea"></canvas>
+                </div>
+                <div class="card">
+                    <div class="card-head"><h3>Encuestas de Satisfacción</h3></div>
+                    <canvas id="chartEncuestas"></canvas>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===== VIEW: HABITACIONES ===== -->
+        <section class="view" id="view-habitaciones">
+            <div class="ops-toolbar">
+                <label for="roomProperty">Propiedad</label>
+                <select id="roomProperty" aria-label="Propiedad para habitaciones"><option value="">Todas las propiedades</option></select>
+                <button class="btn btn-ghost" id="roomRefresh" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.6"/><path d="M20 4v7h-7"/></svg><span>Actualizar habitaciones</span></button>
+            </div>
+            <div class="kpi-grid" id="roomKpis" aria-live="polite"></div>
+            <div class="grid-2">
+                <article class="card">
+                    <div class="card-head"><h3>Ocupación, ADR y RevPAR por tipo</h3><span class="badge">capacidad declarada</span></div>
+                    <div class="table-wrap">
+                        <table class="crud-table" id="roomTypesTable">
+                            <thead>
+                                <tr>
+                                    <th>Propiedad</th>
+                                    <th>Tipo de habitación</th>
+                                    <th>Habitaciones</th>
+                                    <th>Reservas</th>
+                                    <th>Noches</th>
+                                    <th>Ocupación</th>
+                                    <th>ADR</th>
+                                    <th>RevPAR</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                    <p class="ops-empty" id="roomTypesEmpty" hidden>Sin tipos configurados. Declara la capacidad para calcular ocupación por tipo.</p>
+                </article>
+                <article class="card">
+                    <div class="card-head"><h3>Mix de noches vendidas por tipo</h3><span class="badge">reservas del período</span></div>
+                    <canvas id="chartRoomMix" height="260"></canvas>
+                </article>
+            </div>
+            <article class="card view-block">
+                <div class="card-head">
+                    <h3>Ocupación y tarifas por dormitorio</h3>
+                    <span class="badge" id="roomNumberCount">0</span>
+                </div>
+                <p class="ops-note">Desglose por número de habitación: noches vendidas, ocupación del período, ADR, ingresos e incidencias abiertas. Pulsa una incidencia para abrir su contexto de huésped en Operación Hotelera.</p>
+                <div class="table-wrap room-detail-wrap">
+                    <table class="crud-table" id="roomNumberTable">
+                        <thead>
+                            <tr>
+                                <th>Habitación</th>
+                                <th>Propiedad</th>
+                                <th>Tipo</th>
+                                <th>Huésped actual</th>
+                                <th>Reservas</th>
+                                <th>Noches</th>
+                                <th>Ocupación</th>
+                                <th>ADR</th>
+                                <th>Ingresos</th>
+                                <th>Incidencias</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+                <p class="ops-empty" id="roomNumberEmpty" hidden>Sin estancias con número de habitación para el período seleccionado.</p>
+            </article>
+            <div class="grid-2 view-block">
+                <article class="card">
+                    <div class="card-head"><h3>Capacidad declarada</h3><span class="badge">obligatoria</span></div>
+                    <p class="ops-note">La ocupación por tipo solo se calcula con la capacidad declarada aquí. Si falta, la plataforma muestra «—» en lugar de estimar habitaciones.</p>
+                    <form id="capacityForm" class="ops-form">
+                        <label class="ops-field">Propiedad
+                            <select id="capProperty" name="marca_id" required><option value="">Selecciona una propiedad</option></select>
+                        </label>
+                        <label class="ops-field">Tipo de habitación
+                            <select id="capType" name="tipo_habitacion" required><option value="">Selecciona un tipo</option></select>
+                        </label>
+                        <label class="ops-field">Habitaciones disponibles
+                            <input type="number" id="capRooms" name="habitaciones" min="0" step="1" value="0" required>
+                        </label>
+                        <button class="btn btn-primary" type="submit" id="capSave">Guardar capacidad</button>
+                    </form>
+                    <div class="table-wrap" style="margin-top:16px">
+                        <table class="crud-table" id="capacityTable">
+                            <thead>
+                                <tr><th>Propiedad</th><th>Tipo</th><th>Habitaciones</th><th>Actualizado por</th><th>Acción</th></tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                    <p class="ops-empty" id="capacityEmpty" hidden>Sin capacidad declarada todavía.</p>
+                </article>
+                <article class="card">
+                    <div class="card-head"><h3>Detalle de estancias</h3><span class="badge" id="roomDetailCount">0</span></div>
+                    <div class="table-wrap room-detail-wrap">
+                        <table class="crud-table" id="roomDetailTable">
+                            <thead>
+                                <tr>
+                                    <th>Habitación</th>
+                                    <th>Propiedad</th>
+                                    <th>Tipo</th>
+                                    <th>Huésped</th>
+                                    <th>Entrada</th>
+                                    <th>Noches</th>
+                                    <th>Valor</th>
+                                    <th>Incid.</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                    <p class="ops-empty" id="roomDetailEmpty" hidden>Sin estancias para el período seleccionado.</p>
+                </article>
+            </div>
+        </section>
+
+        <!-- ===== VIEW: MERCADO ===== -->
+        <section class="view" id="view-mercado">
+            <div class="ops-toolbar">
+                <label for="marketMetric">Métrica</label>
+                <select id="marketMetric" aria-label="Métrica de comparación">
+                    <option value="adr">ADR</option>
+                    <option value="precio">Precio público a largo plazo</option>
+                    <option value="revpar">RevPAR</option>
+                    <option value="ocupacion">Ocupación</option>
+                </select>
+                <label for="marketProperty">Propiedad</label>
+                <select id="marketProperty" aria-label="Propiedad para comparación"><option value="">Todas las propiedades</option></select>
+                <label for="marketGranularity">Granularidad</label>
+                <select id="marketGranularity" aria-label="Granularidad de comparación">
+                    <option value="mes">Mes</option>
+                    <option value="anio">Año</option>
+                </select>
+                <button class="btn btn-ghost" id="marketRefresh" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.6"/><path d="M20 4v7h-7"/></svg><span>Actualizar comparación</span></button>
+                <button class="btn btn-ghost" id="marketPublicRefresh" type="button" title="Sincroniza APIs públicas sin clave: EA Hospitality Pulse y Apartments Zürich"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 21h16"/></svg><span>Sincronizar API pública</span></button>
+            </div>
+            <div class="kpi-grid" id="marketKpis" aria-live="polite"></div>
+            <article class="card">
+                <div class="card-head"><h3>Hotel vs mercado hotelero</h3><span class="badge">referencias públicas</span></div>
+                <canvas id="chartMarket" height="280"></canvas>
+                <p class="ops-note" id="marketNote"></p>
+                <p class="ops-note" id="marketPublicNote">Fuentes públicas sin clave: EA Hospitality Pulse (tarifas hoteleras publicadas, USD) y Apartments Zürich (precios de larga estancia, CHF), con conversión pública a la moneda seleccionada. La sincronización es manual y registra la atribución de cada dato.</p>
+            </article>
+            <div class="grid-2" style="margin-top:18px">
+                <article class="card">
+                    <div class="card-head"><h3>Registrar referencia pública</h3><span class="badge">fuente obligatoria</span></div>
+                    <form id="marketForm" class="ops-form">
+                        <label class="ops-field">Propiedad (opcional)
+                            <select id="marketFormProperty" name="propiedad_id"><option value="">Referencia global</option></select>
+                        </label>
+                        <label class="ops-field">Fuente
+                            <input type="text" name="fuente" maxlength="180" placeholder="Informe STR, Observatorio turístico…" required>
+                        </label>
+                        <label class="ops-field">URL de la fuente
+                            <input type="url" name="url" maxlength="500" placeholder="https://…">
+                        </label>
+                        <label class="ops-field">Tipo
+                            <select name="tipo">
+                                <option value="mercado">Mercado</option>
+                                <option value="competencia">Competencia</option>
+                                <option value="referencia">Referencia</option>
+                                <option value="otro">Otro</option>
+                            </select>
+                        </label>
+                        <label class="ops-field">Métrica
+                            <select name="metrica">
+                                <option value="adr">ADR</option>
+                                <option value="precio">Precio público a largo plazo</option>
+                                <option value="revpar">RevPAR</option>
+                                <option value="ocupacion">Ocupación</option>
+                            </select>
+                        </label>
+                        <label class="ops-field">Período (YYYY-MM o YYYY)
+                            <input type="text" name="periodo" pattern="\d{4}(-\d{2})?" placeholder="2026-03" required>
+                        </label>
+                        <label class="ops-field">Valor
+                            <input type="number" name="valor" min="0" step="0.01" required>
+                        </label>
+                        <label class="ops-field">Moneda ISO
+                            <input type="text" name="moneda" minlength="3" maxlength="3" pattern="[A-Za-z]{3}" value="CLP" required>
+                        </label>
+                        <label class="ops-field">Tipo de habitación (opcional)
+                            <input type="text" name="tipo_habitacion" maxlength="100">
+                        </label>
+                        <label class="ops-field">Notas
+                            <textarea name="notas" rows="2" maxlength="2000"></textarea>
+                        </label>
+                        <button class="btn btn-primary" type="submit" id="marketSave">Guardar referencia</button>
+                    </form>
+                    <div class="market-import">
+                        <label class="btn btn-ghost" for="marketFile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M4 20h16"/></svg><span>Importar CSV / TSV / XLSX / JSON</span></label>
+                        <input type="file" id="marketFile" accept=".csv,.tsv,.xlsx,.json" hidden>
+                        <span class="ops-note">Columnas: fuente, metrica (adr, precio, revpar, ocupacion), periodo, valor, moneda, url, tipo_habitacion, notas, propiedad.</span>
+                    </div>
+                    <p class="ops-note">La métrica «precio» compara tarifas públicas de largo plazo (rack o larga estancia). Puedes registrar referencias manuales, importarlas o sincronizarlas con el botón «Sincronizar API pública»; en todos los casos la fuente y el período quedan verificables.</p>
+                </article>
+                <article class="card">
+                    <div class="card-head"><h3>Referencias registradas</h3><span class="badge" id="marketCount">0</span></div>
+                    <div class="table-wrap">
+                        <table class="crud-table" id="marketTable">
+                            <thead>
+                                <tr>
+                                    <th>Período</th>
+                                    <th>Métrica</th>
+                                    <th>Valor</th>
+                                    <th>Fuente</th>
+                                    <th>Propiedad</th>
+                                    <th>Acción</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                    <p class="ops-empty" id="marketTableEmpty" hidden>Sin referencias registradas. Agrega una o importa un archivo autorizado.</p>
+                </article>
+            </div>
+        </section>
+
+        <section class="view" id="view-operaciones">
+            <div class="ops-toolbar">
+                <label for="opsProperty">Propiedad</label>
+                <select id="opsProperty"><option value="">Todas las propiedades</option></select>
+                <label for="opsRoomFilter">Habitación</label>
+                <input type="text" id="opsRoomFilter" maxlength="30" placeholder="Ej. 204" aria-label="Filtrar incidencias por habitación">
+                <button class="btn btn-ghost" id="opsRefresh" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.6"/><path d="M20 4v7h-7"/></svg><span>Actualizar operación</span></button>
+            </div>
+            <div class="kpi-grid" id="opsKpis" aria-live="polite"></div>
+            <div class="ops-layout">
+                <article class="card ops-card">
+                    <div class="card-head"><h3 id="opsFormTitle">Crear tarea operativa</h3><span class="badge">control diario</span></div>
+                    <form id="opsForm" class="ops-form"></form>
+                    <p class="ops-note">Los cambios quedan registrados en la base de datos y en la auditoría.</p>
+                </article>
+                <article class="card ops-card">
+                    <div class="card-head"><h3>Tablero de operación</h3></div>
+                    <div class="ops-tabs" id="opsTabs" role="tablist" aria-label="Módulos operativos"></div>
+                    <div class="table-wrap ops-table-wrap">
+                        <table class="crud-table" id="opsTable"><thead></thead><tbody></tbody></table>
+                    </div>
+                    <div class="ops-context" id="opsGuestContext" hidden></div>
+                    <p class="ops-empty" id="opsEmpty" hidden>No hay registros para los filtros actuales.</p>
+                </article>
+            </div>
+        </section>
+
+        <!-- ===== VIEW: BASE DE DATOS (CRUD) ===== -->
+        <section class="view" id="view-base">
+            <div class="crud-header">
+                <div class="crud-title">
+                    <h3>Gestión de Reservas</h3>
+                    <p id="crudCountText">Editando la base de datos activa</p>
+                </div>
+                <div class="crud-actions">
+                    <button class="btn btn-primary" id="btnNuevo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span>Nueva Reserva</span></button>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-head">
+                    <h3>Registros de la Base de Datos</h3>
+                    <div class="crud-filters">
+                        <input type="text" id="crudBuscar" placeholder="Buscar en registros...">
+                        <select id="crudFiltroCanal">
+                            <option value="">Todos los canales</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="table-wrap">
+                    <table class="crud-table" id="crudTable">
+                        <thead>
+                            <tr>
+                                <th>Código</th>
+                                <th>Huésped</th>
+                                <th>Habitación</th>
+                                <th>Nacionalidad</th>
+                                <th>Canal</th>
+                                <th>Fecha</th>
+                                <th>Valor</th>
+                                <th>Estado</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="crudBody"></tbody>
+                    </table>
+                    <div class="crud-empty" id="crudEmpty" style="display:none">
+                        <p>No hay registros. Crea una reserva o importa una base de datos.</p>
+                    </div>
+                </div>
+                <div class="crud-pagination" id="crudPagination"></div>
+            </div>
+        </section>
+
+        <!-- ===== VIEW: AUDITORÍA ===== -->
+        <section class="view" id="view-auditoria">
+            <div class="crud-header">
+                <div class="crud-title">
+                    <h3>Registro de Auditoría</h3>
+                    <p id="auditCountText">Eventos de seguridad y actividad</p>
+                </div>
+                <div class="crud-actions">
+                    <button class="btn btn-ghost" id="btnAuditRefresh"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.6"/><path d="M20 4v7h-7"/></svg><span>Actualizar</span></button>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-head">
+                    <h3>Eventos registrados</h3>
+                </div>
+                <div class="table-wrap">
+                    <table class="crud-table" id="auditTable">
+                        <thead>
+                            <tr>
+                                <th>Fecha y hora</th>
+                                <th>Acción</th>
+                                <th>Usuario</th>
+                                <th>Detalle</th>
+                            </tr>
+                        </thead>
+                        <tbody id="auditBody"></tbody>
+                    </table>
+                    <div class="crud-empty" id="auditEmpty" style="display:none">
+                        <p>Sin eventos registrados aún.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+        <!-- ===== VIEW: SEGURIDAD Y ACCESO ===== -->
+        <section class="view" id="view-seguridad">
+            <div class="grid-2">
+                <article class="card">
+                    <div class="card-head">
+                        <h3>Autenticación en dos pasos (MFA)</h3>
+                        <span class="badge" id="mfaBadge">desconocido</span>
+                    </div>
+                    <p class="ops-note" id="mfaStatus">Comprobando estado…</p>
+
+                    <div id="mfaEnablePanel" hidden>
+                        <p class="modal-hint">
+                            Escanea el código en tu aplicación de autenticación (Google Authenticator,
+                            Microsoft Authenticator, 1Password…) o introduce la clave secreta manualmente.
+                        </p>
+                        <div class="secret-box">
+                            <span>Clave secreta</span>
+                            <code id="mfaSecret">—</code>
+                        </div>
+                        <div class="secret-box">
+                            <span>URI otpauth</span>
+                            <code id="mfaUri" style="word-break:break-all">—</code>
+                        </div>
+                        <div class="inline-form">
+                            <input type="text" id="mfaEnableCode" inputmode="numeric" maxlength="12"
+                                   placeholder="Código de 6 dígitos" aria-label="Código de verificación">
+                            <button class="btn btn-primary" id="mfaEnableBtn" type="button">Activar MFA</button>
+                        </div>
+                        <div class="backup-codes" id="mfaBackupCodes" hidden>
+                            <p><b>Guarda estos códigos de respaldo.</b> Cada uno se puede usar una sola vez
+                            y no se volverán a mostrar.</p>
+                            <ul id="mfaBackupList"></ul>
+                        </div>
+                    </div>
+
+                    <button class="btn btn-ghost" id="mfaSetupBtn" type="button" hidden>Configurar MFA</button>
+
+                    <form id="mfaDisableForm" class="ops-form" hidden>
+                        <p class="ops-note">Para desactivar MFA confirma tu contraseña y un código válido.</p>
+                        <label class="ops-field">Contraseña
+                            <input type="password" id="mfaDisablePass" autocomplete="current-password" required>
+                        </label>
+                        <label class="ops-field">Código MFA o de respaldo
+                            <input type="text" id="mfaDisableCode" maxlength="32" required>
+                        </label>
+                        <button class="btn btn-ghost" type="submit">Desactivar MFA</button>
+                    </form>
+                </article>
+
+                <article class="card">
+                    <div class="card-head"><h3>Cambiar contraseña</h3><span class="badge">sesión</span></div>
+                    <form id="passwordForm" class="ops-form">
+                        <label class="ops-field">Contraseña actual
+                            <input type="password" id="passActual" autocomplete="current-password" required>
+                        </label>
+                        <label class="ops-field">Nueva contraseña
+                            <input type="password" id="passNueva" minlength="12" autocomplete="new-password" required>
+                        </label>
+                        <label class="ops-field">Repetir nueva contraseña
+                            <input type="password" id="passConfirm" minlength="12" autocomplete="new-password" required>
+                        </label>
+                        <p class="ops-note">Mínimo 12 caracteres y 3 de estos tipos: mayúsculas,
+                        minúsculas, números o símbolos. Al cambiarla se cierran las demás sesiones.</p>
+                        <button class="btn btn-primary" type="submit">Actualizar contraseña</button>
+                    </form>
+                </article>
+            </div>
+
+            <article class="card" id="adminUsersPanel" hidden>
+                <div class="card-head">
+                    <h3>Usuarios, roles y permisos por propiedad</h3>
+                    <span class="badge">solo administradores</span>
+                </div>
+                <p class="modal-hint">
+                    Asigna explícitamente las propiedades que cada usuario puede consultar y operar.
+                    Los administradores y las cuentas con acceso global ven todas las propiedades.
+                </p>
+                <form id="userCreateForm" class="form-grid">
+                    <div class="form-field">
+                        <label for="uUsername">Usuario</label>
+                        <input type="text" id="uUsername" minlength="3" maxlength="100" required>
+                    </div>
+                    <div class="form-field">
+                        <label for="uPassword">Contraseña inicial</label>
+                        <input type="password" id="uPassword" minlength="12" autocomplete="new-password" required>
+                    </div>
+                    <div class="form-field">
+                        <label for="uEmail">Correo (para SSO)</label>
+                        <input type="email" id="uEmail" maxlength="255" autocomplete="off">
+                    </div>
+                    <div class="form-field">
+                        <label for="uRol">Rol</label>
+                        <select id="uRol">
+                            <option value="lector">Lector</option>
+                            <option value="editor">Editor</option>
+                            <option value="admin">Administrador</option>
+                        </select>
+                    </div>
+                    <div class="form-field">
+                        <label for="uProps">Propiedades asignadas</label>
+                        <select id="uProps" multiple size="4"></select>
+                    </div>
+                    <div class="form-field">
+                        <label for="uAllProps">Acceso global</label>
+                        <label class="check-line">
+                            <input type="checkbox" id="uAllProps"> Ver todas las propiedades
+                        </label>
+                    </div>
+                    <div class="form-field" style="grid-column:1/-1">
+                        <button class="btn btn-primary" type="submit" style="justify-self:start">Crear usuario</button>
+                    </div>
+                </form>
+                <div class="table-wrap">
+                    <table class="crud-table" id="usersTable">
+                        <thead>
+                            <tr>
+                                <th>Usuario</th>
+                                <th>Correo</th>
+                                <th>Rol</th>
+                                <th>MFA</th>
+                                <th>Acceso</th>
+                                <th>Propiedades / acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="usersBody"></tbody>
+                    </table>
+                    <div class="crud-empty" id="usersEmpty" style="display:none">
+                        <p>Sin usuarios registrados.</p>
+                    </div>
+                </div>
+            </article>
+        </section>
+    </main>
+
+    <!-- ===== MODAL: SUBIR DATOS ===== -->
+    <div class="modal-overlay" id="modalOverlay" aria-hidden="true">
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="uploadModalTitle">
+            <div class="modal-head">
+                <h3 id="uploadModalTitle">Importar Base de Datos</h3>
+                <button class="modal-close" id="modalClose" aria-label="Cerrar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+            </div>
+
+            <!-- Paso 1: seleccionar archivo -->
+            <div class="modal-step" id="stepFile">
+                <p class="modal-hint">Importa exportaciones autorizadas desde tu PMS en <b>CSV, TSV, Excel XLSX o JSON</b>.
+                Revisa la vista previa, asigna columnas y el servidor validará y registrará la carga.</p>
+                <div class="dropzone" id="dropzone">
+                    <input type="file" id="fileInput" accept=".csv,.tsv,.xlsx,.json">
+                    <div class="dz-content">
+                        <div class="dz-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M4 20h16"/></svg></div>
+                        <p><b>Arrastra y suelta</b> tu archivo aquí</p>
+                        <p class="dz-sub">o haz clic para seleccionarlo</p>
+                        <span class="dz-formats">CSV · TSV · XLSX · JSON · Máximo 10 MB y 20.000 filas</span>
+                    </div>
+                </div>
+                <div class="file-info" id="fileInfo" style="display:none">
+                    <div class="file-chip">
+                        <span class="file-ext" id="fileExt">.csv</span>
+                        <div>
+                            <div class="file-name" id="fileName"></div>
+                            <div class="file-size" id="fileSize"></div>
+                        </div>
+                        <button class="file-x" id="fileClear" title="Quitar" aria-label="Quitar archivo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+                    </div>
+                    <div class="file-validate">
+                        <span id="validateMsg"></span>
+                        <button class="btn btn-primary" id="btnNext">Continuar <span>→</span></button>
+                    </div>
+                </div>
+                <div class="template-toggle">
+                    <button class="btn btn-ghost" id="btnTemplate"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h4"/></svg><span>Descargar plantilla vacía (CSV)</span></button>
+                </div>
+            </div>
+
+            <!-- Paso 2: mapeo de columnas -->
+            <div class="modal-step" id="stepMap" style="display:none">
+                <p class="modal-hint">Asigna cada columna a su campo. El servidor aplicará este mapeo al cargar los datos; sin información real, los indicadores permanecerán vacíos.</p>
+                <div class="preview" id="dataPreview"></div>
+                <div class="mapping" id="mapping"></div>
+                <div class="modal-actions">
+                    <button class="btn btn-ghost" id="btnBack">← Volver</button>
+                    <button class="btn btn-primary" id="btnApply">Procesar e importar <span>→</span></button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== MODAL: FORMULARIO CRUD ===== -->
+    <div class="modal-overlay" id="crudModalOverlay" aria-hidden="true">
+        <div class="modal modal-sm" role="dialog" aria-modal="true" aria-labelledby="crudModalTitle">
+            <div class="modal-head">
+                <h3 id="crudModalTitle">Nueva Reserva</h3>
+                <button class="modal-close" id="crudModalClose" aria-label="Cerrar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+            </div>
+            <div class="modal-step">
+                <input type="hidden" id="crudId">
+                <form id="crudForm">
+                    <div class="form-grid">
+                        <div class="form-field">
+                            <label>Código</label>
+                            <input type="text" id="fCodigo" placeholder="RES-10240">
+                        </div>
+                        <div class="form-field">
+                            <label>Huésped</label>
+                            <input type="text" id="fHuesped" placeholder="Nombre del huésped" required>
+                        </div>
+                        <div class="form-field">
+                            <label for="fHabitacion">Habitación</label>
+                            <input type="text" id="fHabitacion" maxlength="30" placeholder="Ej. 304">
+                        </div>
+                        <div class="form-field">
+                            <label>Nacionalidad</label>
+                            <select id="fNacionalidad">
+                                <option>EE.UU.</option><option>México</option><option>Canadá</option>
+                                <option>Europa</option><option>Sudamérica</option><option>Asia</option>
+                                <option>Otros</option>
+                            </select>
+                        </div>
+                        <div class="form-field">
+                            <label>Canal de Venta</label>
+                            <select id="fCanal">
+                                <option>Directa Web</option><option>OTA</option><option>GDS</option>
+                                <option>Tour Operador</option><option>Walk-in</option><option>Corporativo</option>
+                            </select>
+                        </div>
+                        <div class="form-field">
+                            <label>Fecha</label>
+                            <input type="date" id="fFecha" required>
+                        </div>
+                        <div class="form-field">
+                            <label>Valor</label>
+                            <input type="number" id="fValor" min="0" step="0.01" placeholder="1200" required>
+                        </div>
+                        <div class="form-field">
+                            <label for="fMoneda">Moneda ISO 4217</label>
+                            <input type="text" id="fMoneda" minlength="3" maxlength="3" pattern="[A-Z]{3}" value="CLP" required>
+                        </div>
+                        <div class="form-field">
+                            <label>Estado</label>
+                            <select id="fEstado">
+                                <option>Confirmada</option><option>Check-in</option><option>Check-out</option>
+                                <option>Waitlist</option><option>Cancelada</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="modal-actions">
+                        <button type="button" class="btn btn-ghost" id="crudCancel">Cancelar</button>
+                        <button type="submit" class="btn btn-primary" id="crudSave">Guardar</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== MODAL: PDF EXPORTADO ===== -->
+    <div class="modal-overlay" id="pdfModalOverlay" aria-hidden="true">
+        <div class="modal modal-sm" role="dialog" aria-modal="true" aria-labelledby="pdfModalTitle">
+            <div class="modal-head">
+                <h3 id="pdfModalTitle">PDF exportado</h3>
+                <button class="modal-close" id="pdfModalClose" aria-label="Cerrar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+            </div>
+            <div class="modal-step">
+                <p class="modal-hint">El PDF se descargó como <b>NorusLuum_Dashboard.pdf</b>. ¿Deseas enviarlo directamente a la impresora?</p>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-ghost" id="pdfModalCancel">Cerrar</button>
+                    <button type="button" class="btn btn-primary" id="pdfModalPrint"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 8V4h10v4"/><rect x="4" y="8" width="16" height="8" rx="1.5"/><path d="M7 16h10v4H7z"/></svg><span>Imprimir</span></button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast notifications -->
+    <div class="toast" id="toast"></div>
+
+    <script src="vendor/chart.umd.min.js"></script>
+    <script src="vendor/papaparse.min.js"></script>
+    <script src="vendor/xlsx.full.min.js"></script>
+    <script src="data/datos.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/importador.js"></script>
+    <script src="js/upload-ui.js"></script>
+    <script src="js/crud.js"></script>
+    <script src="js/app.js"></script>
+    <script src="js/operaciones.js"></script>
+    <script src="js/habitaciones.js"></script>
+    <script src="js/mercado.js"></script>
+</body>
+</html>

@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Iniciar Sesión · Norus &amp; Luum</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/login.css">
+</head>
+<body>
+    <div class="login-page">
+        <div class="login-card">
+            <div class="login-brand">
+                <div class="brand-logo">N&amp;L</div>
+                <h1>Norus &amp; Luum</h1>
+                <p>Hotel Management Suite</p>
+            </div>
+
+            <form id="loginForm" autocomplete="off">
+                <div class="field">
+                    <label for="user">Usuario</label>
+                    <input type="text" id="user" autocomplete="username" required autofocus>
+                </div>
+                <div class="field">
+                    <label for="pass">Contraseña</label>
+                    <input type="password" id="pass" autocomplete="current-password" minlength="1" required>
+                </div>
+                <div class="error-msg" id="errorMsg" role="alert" aria-live="polite"></div>
+                <button type="submit" class="login-btn" id="loginSubmit">Iniciar Sesión</button>
+            </form>
+
+            <form id="mfaForm" autocomplete="off" hidden>
+                <p class="login-hint">
+                    Introduce el código de 6 dígitos de tu aplicación de autenticación
+                    o uno de tus códigos de respaldo.
+                </p>
+                <div class="field">
+                    <label for="mfaCode">Código de verificación</label>
+                    <input type="text" id="mfaCode" inputmode="numeric" autocomplete="one-time-code"
+                           pattern="[A-Za-z0-9 -]{6,32}" maxlength="32" required>
+                </div>
+                <div class="error-msg" id="mfaError" role="alert" aria-live="polite"></div>
+                <button type="submit" class="login-btn" id="mfaSubmit">Verificar</button>
+                <button type="button" class="login-link" id="mfaCancel">← Volver al inicio de sesión</button>
+            </form>
+
+            <div class="sso-block" id="ssoBlock" hidden>
+                <div class="divider"><span>o</span></div>
+                <button type="button" class="login-btn login-btn-alt" id="ssoButton">
+                    Iniciar sesión con SSO corporativo
+                </button>
+            </div>
+
+            <div class="login-footer">
+                <span>Sistema interno · Acceso restringido a personal autorizado</span>
+            </div>
+        </div>
+    </div>
+
+<script src="js/api.js"></script>
+<script src="js/login.js" defer></script>
+</body>
+</html>

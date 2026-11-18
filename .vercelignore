@@ -1,0 +1,24 @@
+# Entornos y cachés locales
+.venv/
+venv/
+.pytest_cache/
+__pycache__/
+*.py[cod]
+
+# Pruebas y configuración local
+tests/
+.env
+.env.*
+!.env.example
+
+# Datos pesados de demostración y SQLite local.
+# En Vercel se usa una base PostgreSQL gestionada mediante DATABASE_URL.
+data/demo/
+data/*.db
+data/*.db-*
+data/*.db.*
+data/*.sqlite*
+
+# Salidas y metadatos de despliegue
+.vercel/
+.vercel/output/
