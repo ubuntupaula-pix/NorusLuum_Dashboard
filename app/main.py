@@ -20,6 +20,7 @@ import hmac
 import json
 import logging
 import os
+import re
 import secrets
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
@@ -47,6 +48,7 @@ from .auth import (
     create_mfa_token,
     csrf_is_valid,
     decode_token,
+    embed_allowed_origins,
     get_current_user,
     hash_password,
     optional_current_user,
@@ -69,13 +71,27 @@ from .crypto import (
 )
 from .dashboard import obtener_dashboard
 from .database import database_kind, get_db
+from .demo import router as demo_router
+from .embed import router as embed_router
 from .etl import ejecutar_carga
+from .import_config import (
+    EXTENSIONES_PERMITIDAS,
+    IMPORT_MAX_ROWS,
+    UPLOAD_CHUNK_BYTES,
+    UPLOAD_MAX_BYTES,
+    UPLOAD_MAX_CHUNKS,
+    UPLOAD_SESSION_TTL_HOURS,
+    limites_publicos,
+)
 from .habitaciones import router as habitaciones_router
 from .mercado import router as mercado_router
+from .mercado_tiempo_real import router as mercado_tiempo_real_router
 from .models import (
     CargaArchivo,
     DimMarca,
     EventoAuditoria,
+    ImportacionChunk,
+    ImportacionSesion,
     HechoReserva,
     IntentoLogin,
     Usuario,
@@ -117,6 +133,10 @@ async def lifespan(app: FastAPI):
     """Arranque/cierre. Las tablas se crean con Alembic, nunca aquí."""
     if IS_PRODUCTION and not encryption_active():
         raise RuntimeError("NORUS_ENCRYPTION_KEY es obligatoria en producción.")
+    if IS_PRODUCTION and not os.environ.get("DATABASE_URL", "").strip():
+        # SQLite en /tmp no se comparte entre funciones serverless: cada
+        # invocación vería un estado distinto y las tablas no existirían.
+        raise RuntimeError("DATABASE_URL (PostgreSQL) es obligatoria en producción.")
     log.info("Norus Intelligence Platform %s · base de datos: %s", APP_VERSION, database_kind())
     yield
 
@@ -145,10 +165,15 @@ if CORS_ORIGINS:
     )
 
 from .operaciones import router as operaciones_router  # noqa: E402
+from .cron import router as cron_router  # noqa: E402
 
 app.include_router(operaciones_router)
+app.include_router(cron_router)
 app.include_router(habitaciones_router)
 app.include_router(mercado_router)
+app.include_router(mercado_tiempo_real_router)
+app.include_router(embed_router)
+app.include_router(demo_router)
 
 # ============================================================
 # ARCHIVOS ESTÁTICOS (frontend)
@@ -168,31 +193,35 @@ MIME = {
 }
 
 SEGMENTOS_PERMITIDOS = {
-    "index.html", "login.html", "css", "js", "data", "vendor", "docs",
+    "index.html", "login.html", "embed.html", "css", "js", "data", "vendor", "docs",
     "favicon.ico", "robots.txt",
 }
 
-CSP = "; ".join([
-    "default-src 'self'",
-    "script-src 'self'",
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-    "font-src 'self' data: https://fonts.gstatic.com",
-    "img-src 'self' data: blob:",
-    "connect-src 'self'",
-    "worker-src 'self' blob:",
-    "object-src 'none'",
-    "base-uri 'self'",
-    "form-action 'self'",
-    "frame-ancestors 'none'",
-])
+
+def _csp() -> str:
+    """Permite iframe solo desde orígenes autorizados explícitamente."""
+    permitidos = embed_allowed_origins()
+    frame = " ".join(permitidos) if permitidos else "'none'"
+    return "; ".join([
+        "default-src 'self'",
+        "script-src 'self'",
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+        "font-src 'self' data: https://fonts.gstatic.com",
+        "img-src 'self' data: blob:",
+        "connect-src 'self'",
+        "worker-src 'self' blob:",
+        "object-src 'none'",
+        "base-uri 'self'",
+        "form-action 'self'",
+        "frame-ancestors " + frame,
+    ])
+
 
 CABECERAS = {
     "X-Content-Type-Options": "nosniff",
     "Cache-Control": "no-store",
     "Pragma": "no-cache",
     "Referrer-Policy": "no-referrer",
-    "X-Frame-Options": "DENY",
-    "Content-Security-Policy": CSP,
     "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
     "Cross-Origin-Opener-Policy": "same-origin",
 }
@@ -258,6 +287,10 @@ async def security_middleware(request: Request, call_next):
 
     for key, value in CABECERAS.items():
         response.headers.setdefault(key, value)
+    response.headers.setdefault("Content-Security-Policy", _csp())
+    # X-Frame-Options no admite listas blancas y contradice frame-ancestors.
+    if not embed_allowed_origins():
+        response.headers.setdefault("X-Frame-Options", "DENY")
     if IS_PRODUCTION:
         response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
     response.headers.setdefault("X-Permitted-Cross-Domain-Policies", "none")
@@ -841,6 +874,7 @@ def listar_reservas(
     busqueda: str = Query("", max_length=100),
     canal: str = Query("", max_length=100),
     propiedad_id: int | None = Query(None, ge=1),
+    con_total: bool = Query(False, description="Devuelve {items, total, canales} para paginación en servidor."),
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_editor),
 ):
@@ -858,17 +892,36 @@ def listar_reservas(
         query = query.filter(HechoReserva.marca_id == propiedad_id)
     if canal:
         query = query.filter(DimCanal.nombre == canal)
-    query = query.order_by(HechoReserva.id.desc())
-    if not busqueda:
-        return [_reserva_to_response(r) for r in query.offset(skip).limit(limit).all()]
+    # Los canales y el total se calculan sobre el alcance del usuario, antes de
+    # paginar. Así la paginación del CRUD es real y el filtro no se queda con
+    # los canales de la página cargada.
+    total: int | None = None
+    canales: list[str] = []
+    if con_total:
+        canales = sorted({
+            nombre for (nombre,) in query.with_entities(DimCanal.nombre).distinct().all() if nombre
+        })
 
-    # El nombre del huésped está cifrado en reposo: se filtra en memoria.
-    needle = busqueda.casefold()
-    matches = [
-        r for r in query.limit(max(limit * 20, 1000)).all()
-        if needle in (r.codigo or "").casefold() or needle in (r.huesped or "").casefold()
-    ]
-    return [_reserva_to_response(r) for r in matches[skip:skip + limit]]
+    query = query.order_by(HechoReserva.id.desc())
+
+    if not busqueda:
+        total = query.count() if con_total else None
+        filas = query.offset(skip).limit(limit).all()
+    else:
+        # El nombre del huésped está cifrado en reposo: hay que filtrar en memoria.
+        tope = 20000 if con_total else max(limit * 20, 1000)
+        needle = busqueda.casefold()
+        matches = [
+            r for r in query.limit(tope).all()
+            if needle in (r.codigo or "").casefold() or needle in (r.huesped or "").casefold()
+        ]
+        total = len(matches) if con_total else None
+        filas = matches[skip:skip + limit]
+
+    items = [_reserva_to_response(r) for r in filas]
+    if con_total:
+        return {"items": items, "total": total, "canales": canales}
+    return items
 
 
 @app.post("/api/reservas", response_model=ReservaResponse)
@@ -991,45 +1044,30 @@ def eliminar_reserva(
 # API: IMPORTACIÓN ETL
 # ============================================================
 
-EXTENSIONES_PERMITIDAS = {".csv", ".tsv", ".xlsx", ".json"}
-
-
-@app.post("/api/importar", response_model=ImportacionResponse)
-async def importar_archivo(
-    file: UploadFile = File(...),
-    mapeo: str = Form(default="{}"),
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_editor),
-):
-    """Sube un archivo y ejecuta el pipeline ETL autenticado."""
-    ext = Path(file.filename or "").suffix.lower()
+def _validar_extension(nombre_archivo: str) -> str:
+    ext = Path(nombre_archivo or "").suffix.lower()
     if ext not in EXTENSIONES_PERMITIDAS:
         raise HTTPException(
             status_code=400,
-            detail=f"Formato no soportado: {ext}. Permitidos: {', '.join(sorted(EXTENSIONES_PERMITIDAS))}",
+            detail=f"Formato no soportado: {ext or '(sin extensión)'}. Permitidos: {', '.join(sorted(EXTENSIONES_PERMITIDAS))}",
         )
+    return ext
 
-    max_bytes = int(os.environ.get("NORUS_UPLOAD_MAX_BYTES", str(512 * 1024 * 1024)))
-    contenido = await file.read(max_bytes + 1)
-    if len(contenido) > max_bytes:
-        raise HTTPException(status_code=413, detail=f"Archivo demasiado grande (máx {max_bytes // (1024 * 1024)} MB).")
-    if not contenido:
-        raise HTTPException(status_code=400, detail="El archivo está vacío.")
 
-    try:
-        mapeo_manual = json.loads(mapeo)
-    except (TypeError, json.JSONDecodeError):
-        raise HTTPException(status_code=400, detail="El mapeo de columnas no es JSON válido.")
-    if not isinstance(mapeo_manual, dict) or len(mapeo_manual) > 40 or any(
-        not isinstance(k, str) or not isinstance(v, str) for k, v in mapeo_manual.items()
+def _validar_mapeo(mapeo: str | dict) -> dict:
+    if isinstance(mapeo, str):
+        try:
+            mapeo = json.loads(mapeo)
+        except (TypeError, json.JSONDecodeError):
+            raise HTTPException(status_code=400, detail="El mapeo de columnas no es JSON válido.")
+    if not isinstance(mapeo, dict) or len(mapeo) > 40 or any(
+        not isinstance(k, str) or not isinstance(v, str) for k, v in mapeo.items()
     ):
         raise HTTPException(status_code=400, detail="El mapeo de columnas no tiene el formato esperado.")
+    return mapeo
 
-    allowed = allowed_property_ids(db, current_user)
-    carga = ejecutar_carga(
-        db, file.filename or "sin_nombre", contenido, current_user.username, mapeo_manual,
-        allowed_property_ids=allowed,
-    )
+
+def _respuesta_carga(carga: CargaArchivo) -> ImportacionResponse:
     return ImportacionResponse(
         carga_id=carga.id,
         nombre_archivo=carga.nombre_archivo,
@@ -1040,6 +1078,197 @@ async def importar_archivo(
         estado=carga.estado,
         mensaje=carga.mensaje_error or f"{carga.filas_exitosas} registros cargados exitosamente.",
     )
+
+
+def _obtener_sesion(db: Session, upload_id: str, current_user: Usuario) -> ImportacionSesion:
+    sesion = db.query(ImportacionSesion).filter_by(upload_id=upload_id).first()
+    if not sesion or sesion.usuario != current_user.username:
+        raise HTTPException(status_code=404, detail="Sesión de carga no encontrada.")
+    if sesion.estado not in ("abierta", "procesando"):
+        raise HTTPException(status_code=409, detail=f"La sesión ya está {sesion.estado}.")
+    ttl = timedelta(hours=UPLOAD_SESSION_TTL_HOURS)
+    if sesion.creado_en and datetime.now(UTC).replace(tzinfo=None) - sesion.creado_en > ttl:
+        raise HTTPException(status_code=410, detail="La sesión de carga expiró. Vuelva a subir el archivo.")
+    return sesion
+
+
+@app.get("/api/importar/config")
+def configuracion_importacion():
+    """Límites vigentes para que el front-end dimensione la subida fragmentada."""
+    return limites_publicos()
+
+
+@app.post("/api/importar", response_model=ImportacionResponse)
+async def importar_archivo(
+    file: UploadFile = File(...),
+    mapeo: str = Form(default="{}"),
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_editor),
+):
+    """Sube un archivo pequeño y ejecuta el pipeline ETL autenticado."""
+    _validar_extension(file.filename or "")
+    contenido = await file.read(UPLOAD_MAX_BYTES + 1)
+    if len(contenido) > UPLOAD_MAX_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Archivo demasiado grande (máx {UPLOAD_MAX_BYTES // (1024 * 1024)} MB). Use la subida fragmentada.",
+        )
+    if not contenido:
+        raise HTTPException(status_code=400, detail="El archivo está vacío.")
+
+    mapeo_manual = _validar_mapeo(mapeo)
+    allowed = allowed_property_ids(db, current_user)
+    carga = ejecutar_carga(
+        db, file.filename or "sin_nombre", contenido, current_user.username, mapeo_manual,
+        allowed_property_ids=allowed,
+    )
+    return _respuesta_carga(carga)
+
+
+@app.post("/api/importar/sesiones")
+def crear_sesion_importacion(
+    body: dict,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_editor),
+):
+    """Abre una sesión de subida fragmentada para archivos grandes."""
+    nombre = str(body.get("nombre_archivo") or "").strip()[:255]
+    _validar_extension(nombre)
+    try:
+        tamano = int(body.get("tamano_bytes", 0))
+        total_chunks = int(body.get("total_chunks", 0))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="tamano_bytes y total_chunks deben ser enteros.")
+    if tamano <= 0 or tamano > UPLOAD_MAX_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Tamaño no permitido (máx {UPLOAD_MAX_BYTES // (1024 * 1024)} MB).",
+        )
+    esperado = (tamano + UPLOAD_CHUNK_BYTES - 1) // UPLOAD_CHUNK_BYTES
+    if total_chunks != esperado or not 1 <= total_chunks <= UPLOAD_MAX_CHUNKS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"total_chunks debe ser {esperado} para {tamano} bytes (fragmentos de {UPLOAD_CHUNK_BYTES} bytes).",
+        )
+    sha256 = str(body.get("sha256") or "").strip().lower()
+    if not re.fullmatch(r"[0-9a-f]{64}", sha256):
+        raise HTTPException(status_code=400, detail="Debe enviar el SHA-256 del archivo (64 caracteres hexadecimales).")
+    mapeo_manual = _validar_mapeo(body.get("mapeo") or {})
+
+    upload_id = secrets.token_urlsafe(24)
+    sesion = ImportacionSesion(
+        upload_id=upload_id, nombre_archivo=nombre, formato="",
+        mapeo=json.dumps(mapeo_manual, ensure_ascii=False), usuario=current_user.username,
+        tamano_bytes=tamano, total_chunks=total_chunks, sha256=sha256,
+        estado="abierta", mensaje="",
+    )
+    db.add(sesion)
+    db.commit()
+    return {"upload_id": upload_id, "chunk_bytes": UPLOAD_CHUNK_BYTES, "total_chunks": total_chunks}
+
+
+@app.post("/api/importar/sesiones/{upload_id}/chunks/{indice}")
+async def subir_chunk_importacion(
+    upload_id: str,
+    indice: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_editor),
+):
+    """Almacena un fragmento. La operación es idempotente por (upload_id, indice)."""
+    sesion = _obtener_sesion(db, upload_id, current_user)
+    if not 0 <= indice < sesion.total_chunks:
+        raise HTTPException(status_code=400, detail="Índice de fragmento fuera de rango.")
+    contenido = await file.read(UPLOAD_CHUNK_BYTES + 1)
+    if len(contenido) > UPLOAD_CHUNK_BYTES:
+        raise HTTPException(status_code=413, detail=f"El fragmento supera {UPLOAD_CHUNK_BYTES} bytes.")
+    if not contenido:
+        raise HTTPException(status_code=400, detail="El fragmento está vacío.")
+    esperado = min(UPLOAD_CHUNK_BYTES, sesion.tamano_bytes - indice * UPLOAD_CHUNK_BYTES)
+    if len(contenido) != esperado:
+        raise HTTPException(status_code=400, detail=f"El fragmento {indice} debe tener {esperado} bytes.")
+
+    chunk = db.query(ImportacionChunk).filter_by(upload_id=upload_id, indice=indice).first()
+    if chunk:
+        chunk.contenido = contenido
+    else:
+        db.add(ImportacionChunk(upload_id=upload_id, indice=indice, contenido=contenido))
+    sesion.estado = "abierta"
+    sesion.actualizado_en = datetime.now(UTC).replace(tzinfo=None)
+    db.commit()
+    recibidos = db.query(func.count(ImportacionChunk.id)).filter_by(upload_id=upload_id).scalar() or 0
+    return {"upload_id": upload_id, "indice": indice, "recibidos": recibidos, "total": sesion.total_chunks}
+
+
+@app.get("/api/importar/sesiones/{upload_id}")
+def estado_sesion_importacion(
+    upload_id: str,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_editor),
+):
+    sesion = _obtener_sesion(db, upload_id, current_user)
+    recibidos = db.query(func.count(ImportacionChunk.id)).filter_by(upload_id=upload_id).scalar() or 0
+    return {
+        "upload_id": upload_id, "estado": sesion.estado, "nombre_archivo": sesion.nombre_archivo,
+        "recibidos": recibidos, "total": sesion.total_chunks, "carga_id": sesion.carga_id,
+        "mensaje": sesion.mensaje,
+    }
+
+
+@app.post("/api/importar/sesiones/{upload_id}/finalizar", response_model=ImportacionResponse)
+def finalizar_sesion_importacion(
+    upload_id: str,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_editor),
+):
+    """Verifica, ensambla e importa el archivo completo."""
+    sesion = _obtener_sesion(db, upload_id, current_user)
+    chunks = db.query(ImportacionChunk).filter_by(upload_id=upload_id).order_by(ImportacionChunk.indice).all()
+    if len(chunks) != sesion.total_chunks or [c.indice for c in chunks] != list(range(sesion.total_chunks)):
+        raise HTTPException(status_code=409, detail="Faltan fragmentos para completar el archivo.")
+    contenido = b"".join(c.contenido for c in chunks)
+    if len(contenido) != sesion.tamano_bytes:
+        raise HTTPException(status_code=409, detail="El tamaño ensamblado no coincide con el declarado.")
+    if hashlib.sha256(contenido).hexdigest() != sesion.sha256:
+        raise HTTPException(status_code=409, detail="El hash SHA-256 no coincide; vuelva a subir el archivo.")
+
+    sesion.estado = "procesando"
+    db.commit()
+    try:
+        mapeo_manual = _validar_mapeo(sesion.mapeo)
+        allowed = allowed_property_ids(db, current_user)
+        carga = ejecutar_carga(
+            db, sesion.nombre_archivo, contenido, current_user.username, mapeo_manual,
+            allowed_property_ids=allowed,
+        )
+        sesion.estado = "procesada"
+        sesion.carga_id = carga.id
+        sesion.mensaje = carga.mensaje_error or ""
+        db.commit()
+        db.query(ImportacionChunk).filter_by(upload_id=upload_id).delete()
+        db.delete(sesion)
+        db.commit()
+        return _respuesta_carga(carga)
+    except Exception as exc:
+        sesion.estado = "fallida"
+        sesion.mensaje = str(exc)[:500]
+        db.commit()
+        raise
+
+
+@app.delete("/api/importar/sesiones/{upload_id}")
+def cancelar_sesion_importacion(
+    upload_id: str,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_editor),
+):
+    sesion = db.query(ImportacionSesion).filter_by(upload_id=upload_id).first()
+    if not sesion or sesion.usuario != current_user.username:
+        raise HTTPException(status_code=404, detail="Sesión de carga no encontrada.")
+    db.query(ImportacionChunk).filter_by(upload_id=upload_id).delete()
+    db.delete(sesion)
+    db.commit()
+    return {"ok": True}
 
 
 @app.get("/api/cargas", response_model=list[CargaArchivoResponse])
@@ -1200,6 +1429,12 @@ def servir(ruta: str, request: Request, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="No encontrado.")
 
     relative = objetivo.relative_to(RAIZ).as_posix()
+
+    # El widget embebible se autentica con un token Bearer enviado por
+    # postMessage; no depende de la cookie de sesión ni redirige a login.
+    if relative == "embed.html":
+        return FileResponse(objetivo, headers=CABECERAS, media_type=MIME[".html"])
+
     user = optional_current_user(
         credentials=None,
         norus_session=request.cookies.get(SESSION_COOKIE),
@@ -1212,9 +1447,13 @@ def servir(ruta: str, request: Request, db: Session = Depends(get_db)):
     if relative == "login.html" and user is not None:
         return RedirectResponse("/index.html", status_code=302)
 
+    headers = dict(CABECERAS)
+    if relative.startswith(("css/", "js/", "vendor/")) or relative == "data/datos.js":
+        headers["Cache-Control"] = "public, max-age=3600"
+        headers.pop("Pragma", None)
     return FileResponse(
         objetivo,
-        headers=CABECERAS,
+        headers=headers,
         media_type=MIME.get(objetivo.suffix.lower(), "application/octet-stream"),
     )
 

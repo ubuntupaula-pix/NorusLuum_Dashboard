@@ -15,6 +15,36 @@
   let authRole = sessionStorage.getItem('norus_role') || 'lector';
   let authMe = null;
 
+  // ---------- Render inmediato (stale-while-revalidate) ----------
+  // Pintamos el último snapshot válido antes de esperar a /auth/me. Así, al
+  // ocultarse el overlay de autenticación, los KPI y gráficos ya están visibles
+  // y solo se sustituyen cuando llega la respuesta fresca del servidor.
+  function dashboardCacheKey(f) {
+    const filtros = f || filtrosActuales();
+    return window.NorusCache.key(
+      'dashboard', authUser, authRole,
+      filtros.moneda, filtros.granularidad, filtros.desde, filtros.hasta,
+      filtros.propiedadId
+    );
+  }
+
+  function aplicarDashboard(datos, desdeCache) {
+    cargarDatosRespuesta(datos);
+    renderAll();
+    if (desdeCache) {
+      const status = $('#estadoTexto');
+      if (status) status.textContent = 'Últimos datos guardados · actualizando…';
+    }
+  }
+
+  function restaurarDashboardCache() {
+    if (!window.NorusCache) return false;
+    const datos = window.NorusCache.get(dashboardCacheKey());
+    if (!datos) return false;
+    aplicarDashboard(datos, true);
+    return true;
+  }
+
   const logoutBtn = document.getElementById('btnLogout');
   if (logoutBtn) logoutBtn.addEventListener('click', async function () {
     try { await window.API.logout(); } catch (_) { /* se elimina igualmente el indicador local */ }
@@ -29,6 +59,12 @@
     window.API.setToken(true);
     sessionStorage.setItem('norus_user', authUser);
     sessionStorage.setItem('norus_role', authRole);
+    // Los módulos cargados antes de resolver /auth/me pueden haber tomado una
+    // decisión de permisos con el rol todavía desconocido: se reevalúan aquí.
+    window.__norusRole = authRole;
+    if (window.Mercado && typeof window.Mercado.refreshPermissions === 'function') {
+      window.Mercado.refreshPermissions(authRole);
+    }
 
     const avatarEl = document.querySelector('.avatar');
     if (avatarEl) {
@@ -826,24 +862,32 @@
   }
 
   let cargandoDashboard = false;
+  let recargaPendiente = false;
 
   async function cargarDashboardServidor() {
-    if (cargandoDashboard) return;
+    // No descartar cambios de filtro rápidos: se reprocesa con los valores
+    // finales en cuanto termine la petición en curso.
+    if (cargandoDashboard) { recargaPendiente = true; return; }
     const f = filtrosActuales();
     if (f.desde && f.hasta && f.desde > f.hasta) {
       avisar('La fecha “desde” no puede ser posterior a “hasta”.', 'error');
       return;
     }
     cargandoDashboard = true;
+    const clave = dashboardCacheKey(f);
     try {
       const datos = await window.API.dashboard(f.moneda, f.granularidad, f.desde, f.hasta, f.propiedadId);
-      cargarDatosRespuesta(datos);
-      renderAll();
+      aplicarDashboard(datos, false);
+      if (window.NorusCache) window.NorusCache.set(clave, datos);
     } catch (err) {
       beSafeNotify('No se pudo cargar el dashboard: ' + err.message);
       console.error('Error cargando datos del servidor:', err);
     } finally {
       cargandoDashboard = false;
+      if (recargaPendiente) {
+        recargaPendiente = false;
+        await cargarDashboardServidor();
+      }
     }
   }
 
@@ -1212,6 +1256,64 @@
     }
   }
 
+  // ---------- Datos de demostración: banner siempre visible ----------
+  async function actualizarDemo() {
+    const banner = $('#demoAlert');
+    if (!banner) return;
+    let estado;
+    try {
+      estado = await window.API.demoEstado();
+    } catch (_) {
+      banner.hidden = true;
+      return;
+    }
+    banner.hidden = !estado.activo;
+    const esAdmin = authRole === 'admin';
+    const borrar = $('#demoBorrar');
+    const recargar = $('#demoRecargar');
+    if (borrar) borrar.hidden = !esAdmin;
+    if (recargar) recargar.hidden = !esAdmin;
+    const detalle = $('#demoAlertDetalle');
+    if (detalle && estado.activo) {
+      const filas = Number(estado.reservas || 0).toLocaleString('es-CL');
+      detalle.textContent = filas + ' reservas reales · Antonio, de Almeida & Nunes (2019), CC BY 4.0 · '
+        + 'ADR convertido a CLP con FX real · capacidad de referencia 100 hab./hotel · mercado: INE-EMAT (Chile).';
+    }
+  }
+
+  async function accionDemo(tipo) {
+    const borrar = tipo === 'borrar';
+    const botones = [$('#demoBorrar'), $('#demoRecargar')].filter(Boolean);
+    botones.forEach(boton => { boton.disabled = true; });
+    try {
+      if (borrar) await window.API.demoBorrar();
+      else await window.API.demoCargar({});
+      avisar(borrar ? 'Datos de demostración borrados.' : 'Datos de demostración cargados.', 'success');
+      await actualizarDemo();
+      await cargarDashboardServidor();
+      if (window.Mercado && typeof window.Mercado.loadComparison === 'function') {
+        await window.Mercado.loadComparison();
+      }
+    } catch (e) {
+      avisar('No se pudo ' + (borrar ? 'borrar' : 'cargar') + ' los datos demo: ' + e.message, 'error');
+    } finally {
+      botones.forEach(boton => { boton.disabled = false; });
+    }
+  }
+
+  const demoBorrarBtn = $('#demoBorrar');
+  if (demoBorrarBtn) demoBorrarBtn.addEventListener('click', () => {
+    if (window.confirm('¿Borrar únicamente los datos de demostración? Tus importaciones reales se conservarán.')) {
+      accionDemo('borrar');
+    }
+  });
+  const demoRecargarBtn = $('#demoRecargar');
+  if (demoRecargarBtn) demoRecargarBtn.addEventListener('click', () => {
+    if (window.confirm('Esto reemplaza la demo actual por un nuevo conjunto generado. ¿Continuar?')) {
+      accionDemo('cargar');
+    }
+  });
+
   function initSeguridad() {
     if (!authMe) return;
     mfaEstadoVisual(Boolean(authMe.mfa_habilitado));
@@ -1247,6 +1349,21 @@
     if (select) select.disabled = uAllProps.checked;
   });
 
+  async function cargarMonedas() {
+    try {
+      const currencyInfo = await window.API.dashboardCurrencies();
+      const select = $('#moneda');
+      if (!select) return;
+      const anterior = select.value;
+      select.replaceChildren();
+      (currencyInfo.monedas || ['CLP']).forEach(code => select.add(new Option(code, code)));
+      if ([...select.options].some(o => o.value === anterior)) select.value = anterior;
+      else if ([...select.options].some(o => o.value === 'CLP')) select.value = 'CLP';
+    } catch (err) {
+      console.warn('No se pudieron cargar las monedas:', err);
+    }
+  }
+
   async function arranque() {
     try {
       const me = await window.API.me();
@@ -1257,23 +1374,22 @@
       return;
     }
 
-    try {
-      const currencyInfo = await window.API.dashboardCurrencies();
-      const select = $('#moneda');
-      select.replaceChildren();
-      (currencyInfo.monedas || ['CLP']).forEach(code => select.add(new Option(code, code)));
-      if ([...select.options].some(o => o.value === 'CLP')) select.value = 'CLP';
-    } catch (err) {
-      console.warn('No se pudieron cargar las monedas:', err);
-    }
-
-    await cargarPropiedades();
-    await cargarDashboardServidor();
-    initSeguridad();
+    // catálogos pequeños en paralelo: el dashboard ya está pintado desde caché.
+    await Promise.all([cargarMonedas(), cargarPropiedades()]);
+    //El resto de apartados se revalidan simultáneamente.
+    await Promise.all([
+      cargarDashboardServidor(),
+      actualizarDemo(),
+      Promise.resolve().then(initSeguridad)
+    ]);
     // No se fuerza una vista: si el usuario ya navegó durante el arranque,
     // su elección se respeta. El HTML abre en "resumen" por defecto.
   }
 
+  // Se ejecuta al final del módulo: renderAll() usa constantes definidas más
+  // abajo (fmtOpt, fmtMoneda, …). Llamarlo antes provocaba un ReferenceError
+  // de zona muerta temporal y dejaba los KPI en blanco hasta la respuesta API.
+  restaurarDashboardCache();
   arranque();
 
   // ---------- Re-render en tiempo real con datos importados ----------

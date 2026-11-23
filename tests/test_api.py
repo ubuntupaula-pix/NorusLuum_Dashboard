@@ -217,6 +217,28 @@ def test_dashboard_granularidades(client, granularidad):
     assert "meses" in data
 
 
+def test_dashboard_preview_incluye_numero_de_habitacion(client):
+    login(client)
+    codigo = "RES-HAB-DASH"
+    creada = post(client, "/api/reservas", json={
+        "codigo": codigo,
+        "huesped": "Huésped Habitación",
+        "habitacion": "612",
+        "estado": "Confirmada",
+        "valor": 100.0,
+        "noches": 1,
+        "fecha": date.today().isoformat(),
+        "canal": "Directo",
+        "nacionalidad": "Chile",
+        "tipo_habitacion": "Suite",
+    })
+    assert creada.status_code == 200, creada.text
+
+    data = client.get("/api/dashboard", params={"granularidad": "mes"}).json()
+    fila = next(r for r in data["reservas"] if r["codigo"] == codigo)
+    assert fila["habitacion"] == "612"
+
+
 def test_dashboard_granularidad_invalida(client):
     login(client)
     response = client.get("/api/dashboard", params={"granularidad": "trimestre"})
@@ -1145,6 +1167,12 @@ def test_sincroniza_mercado_publico_y_compara(client, monkeypatch):
         raise AssertionError(f"URL no esperada: {url}")
 
     monkeypatch.setattr(mercado_publico, "fetch_json", fake_fetch_json)
+    # Esta prueba usa fuentes simuladas: la fuente real de Chile (INE-EMAT)
+    # se prueba por separado y no debe consultarse en este escenario.
+    monkeypatch.setattr(
+        mercado_publico, "enabled_sources",
+        lambda: ["ea_hospitality_pulse", "apartments_zuerich"],
+    )
     mercado_publico.clear_cache()
     login(client)
     response = post(client, "/api/mercado/publico/actualizar", params={"moneda": "CLP"})
@@ -1163,6 +1191,431 @@ def test_sincroniza_mercado_publico_y_compara(client, monkeypatch):
     assert "EA Hospitality Pulse" in {
         ref["fuente"] for ref in comparison.json()["referencias"]
     }
+
+
+# ---------- Paginación real y mercado en casi tiempo real ----------
+
+def test_listar_reservas_con_total_para_paginacion(client):
+    login(client)
+    creada = post(client, "/api/reservas", json={
+        "codigo": "RES-PAG-001",
+        "huesped": "Paginación Real",
+        "estado": "Confirmada",
+        "valor": 1000.0,
+        "noches": 2,
+        "fecha": date.today().isoformat(),
+        "canal": "Canal Paginación",
+        "nacionalidad": "Chile",
+    })
+    assert creada.status_code == 200, creada.text
+
+    page = client.get("/api/reservas", params={"skip": 0, "limit": 2, "con_total": "true"})
+    assert page.status_code == 200, page.text
+    data = page.json()
+    assert set(data) == {"items", "total", "canales"}
+    assert len(data["items"]) <= 2
+    assert data["total"] >= len(data["items"])
+    assert "Canal Paginación" in data["canales"]
+
+    page2 = client.get("/api/reservas", params={"skip": 2, "limit": 2, "con_total": "true"})
+    ids = {r["id"] for r in data["items"]}
+    assert not ids.intersection({r["id"] for r in page2.json()["items"]})
+
+
+def test_mercado_tiempo_real_con_cache_y_refresco(client, monkeypatch):
+    from app import mercado_publico, mercado_tiempo_real
+
+    monkeypatch.setattr(mercado_publico, "enabled_sources", lambda: [])
+    monkeypatch.setattr(mercado_tiempo_real, "_load_connectors", lambda: [])
+    monkeypatch.setenv("NORUS_MARKET_CONNECTORS", "")
+
+    db = TestingSessionLocal()
+    try:
+        db.add(ReferenciaMercado(
+            fuente="Referencia de prueba",
+            metrica="adr",
+            periodo=date.today().strftime("%Y-%m"),
+            valor=100.0,
+            moneda="CLP",
+        ))
+        db.commit()
+    finally:
+        db.close()
+
+    login(client)
+    r = client.get("/api/mercado/tiempo-real", params={"moneda": "CLP", "ventana": "24h"})
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["moneda"] == "CLP"
+    assert data["cache"] == "miss"
+    assert {"interno", "externo", "comparativa", "senales"} <= set(data)
+
+    hit = client.get("/api/mercado/tiempo-real", params={"moneda": "CLP", "ventana": "24h"})
+    assert hit.json()["cache"] == "hit"
+
+    forzado = client.get(
+        "/api/mercado/tiempo-real",
+        params={"moneda": "CLP", "ventana": "24h", "refresh": "1"},
+    )
+    assert forzado.json()["cache"] == "miss"
+
+
+def test_mercado_tiempo_real_normaliza_estados_de_fuentes_publicas(client, monkeypatch):
+    from app import mercado_publico, mercado_tiempo_real
+
+    def fake_fetch_json(url, cache_ttl=None, force=False):
+        if "rate-observations" in url:
+            return {"data": [
+                {"market": "santiago", "stay_date": date.today().isoformat(), "rate_usd": 100},
+            ]}
+        if "apartments.zuerich" in url:
+            return {"prices": [{"apartment": "4101", "priceLongTerm": 2000}],
+                    "priceMetadata": {"asOf": date.today().isoformat(), "currency": "CHF"}}
+        if "open.er-api.com" in url:
+            return {"result": "success", "rates": {"CLP": 900.0, "CHF": 0.8}}
+        raise AssertionError(f"URL no esperada: {url}")
+
+    monkeypatch.setattr(mercado_publico, "fetch_json", fake_fetch_json)
+    monkeypatch.setattr(
+        mercado_publico, "enabled_sources",
+        lambda: ["ea_hospitality_pulse", "apartments_zuerich"],
+    )
+    monkeypatch.setattr(mercado_tiempo_real, "_load_connectors", lambda: [])
+    mercado_publico.clear_cache()
+    login(client)
+
+    respuesta = client.get(
+        "/api/mercado/tiempo-real", params={"moneda": "CLP", "ventana": "7d"}
+    )
+    assert respuesta.status_code == 200, respuesta.text
+    data = respuesta.json()
+    fuentes = data["externo"]["fuentes"]
+    assert fuentes and all(isinstance(f, dict) for f in fuentes)
+    assert any(f["estado"] == "ok" for f in fuentes)
+    assert data["externo"]["observaciones"] > 0
+    assert data["externo"]["origen"] == "en_vivo"
+
+
+def test_token_embed_solo_autoriza_tiempo_real(client, monkeypatch):
+    monkeypatch.setenv("NORUS_EMBED_ALLOWED_ORIGINS", "https://padre.example.com")
+    login(client)
+
+    config = client.get("/api/embed/config")
+    assert config.status_code == 200
+    assert config.json()["habilitado"] is True
+
+    rechazado = post(client, "/api/embed/token", json={
+        "parent_origin": "https://otro.example.com",
+        "moneda": "CLP",
+    })
+    assert rechazado.status_code == 403
+
+    emitido = post(client, "/api/embed/token", json={
+        "parent_origin": "https://padre.example.com",
+        "moneda": "CLP",
+        "minutos": 60,
+    })
+    assert emitido.status_code == 200, emitido.text
+    payload = emitido.json()
+    assert payload["expires_en_minutos"] == 60
+    assert "<iframe" in payload["nota"]
+    assert "postMessage" in payload["nota"]
+
+    headers = {"Authorization": "Bearer " + payload["token"]}
+    permitido = client.get("/api/mercado/tiempo-real", headers=headers, params={"moneda": "CLP"})
+    assert permitido.status_code == 200, permitido.text
+
+    denegado = client.get("/api/dashboard", headers=headers)
+    assert denegado.status_code == 401
+
+
+def test_embed_html_sin_login_y_csp(client, monkeypatch):
+    monkeypatch.setenv("NORUS_EMBED_ALLOWED_ORIGINS", "https://padre.example.com")
+    client.cookies.clear()
+    widget = client.get("/embed.html")
+    assert widget.status_code == 200, widget.text
+    assert "norus:token" in widget.text or "js/embed.js" in widget.text
+    csp = widget.headers.get("content-security-policy", "")
+    assert "frame-ancestors https://padre.example.com" in csp
+    assert "x-frame-options" not in {k.lower() for k in widget.headers}
+
+
+# ---------- Datos de demostración: visibles y borrables ----------
+
+def test_demo_cargar_estado_y_borrar(client, monkeypatch):
+    """La demo usa datos reales; se simula la red para que la prueba sea rápida."""
+    from pathlib import Path
+
+    from app import mercado_publico
+    from scripts import seed_demo_real
+
+    encabezado = (
+        "hotel,is_canceled,lead_time,arrival_date_year,arrival_date_month,"
+        "arrival_date_week_number,arrival_date_day_of_month,stays_in_weekend_nights,"
+        "stays_in_week_nights,adults,children,babies,meal,country,market_segment,"
+        "distribution_channel,is_repeated_guest,previous_cancellations,"
+        "previous_bookings_not_canceled,reserved_room_type,assigned_room_type,"
+        "booking_changes,deposit_type,agent,company,days_in_waiting_list,"
+        "customer_type,adr,required_car_parking_spaces,total_of_special_requests,"
+        "reservation_status,reservation_status_date\n"
+    )
+    meses_ingles = [
+        "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December",
+    ]
+    filas_csv = []
+    for i in range(130):
+        mes = i % 12 + 1
+        nombre_mes = meses_ingles[mes - 1]
+        filas_csv.append(
+            f"City Hotel,0,10,2025,{nombre_mes},1,{i % 28 + 1},1,2,2,0,0,BB,CHL,"
+            f"Direct,Direct,0,0,0,A,A,0,No Deposit,NULL,NULL,0,Transient,100,0,0,"
+            f"Check-Out,2025-{mes:02d}-{i % 28 + 1:02d}\n"
+        )
+
+    def fake_descargar(destino):
+        Path(destino).write_text(encabezado + "".join(filas_csv), encoding="utf-8")
+
+    monkeypatch.setattr(seed_demo_real, "_descargar_csv", fake_descargar)
+    monkeypatch.setattr(mercado_publico, "fx_rate", lambda *a, **k: 900.0)
+    monkeypatch.setattr(
+        mercado_publico, "fetch_public_references",
+        lambda moneda, fuentes=None, cache_ttl=None, force=False: ([], []),
+    )
+
+    login(client)
+
+    borrado = delete(client, "/api/demo")
+    assert borrado.status_code == 200, borrado.text
+    assert borrado.json()["activo"] is False
+
+    carga = post(client, "/api/demo/cargar", json={"filas": 120})
+    assert carga.status_code == 200, carga.text
+    datos = carga.json()
+    assert datos["activo"] is True
+    assert datos["filas"] == 120
+    assert datos["reservas"] == 120
+    assert datos["cargas"]
+
+    estado = client.get("/api/demo/estado")
+    assert estado.status_code == 200
+    assert estado.json()["activo"] is True
+
+    # Las propiedades del dataset real aparecen en el catálogo y en los filtros.
+    propiedades = client.get("/api/operaciones/propiedades")
+    assert propiedades.status_code == 200
+    nombres = [p["nombre"] for p in propiedades.json()]
+    assert any("Demo real · City Hotel" in n for n in nombres)
+
+    # El borrado no elimina usuarios ni auditoría.
+    borrado = delete(client, "/api/demo")
+    assert borrado.status_code == 200, borrado.text
+    assert borrado.json()["activo"] is False
+    assert borrado.json()["reservas"] == 0
+
+    usuarios = client.get("/api/usuarios")
+    assert usuarios.status_code == 200
+    assert any(u["username"] == ADMIN_USER for u in usuarios.json())
+
+
+def test_demo_borrado_requiere_admin(client):
+    db = TestingSessionLocal()
+    try:
+        db.add(Usuario(
+            username="lector_demo", password_hash=hash_password("lectorpass-lectorpass"), rol="lector"
+        ))
+        db.commit()
+    finally:
+        db.close()
+    login(client, "lector_demo", "lectorpass-lectorpass")
+    respuesta = delete(client, "/api/demo")
+    assert respuesta.status_code == 403
+
+
+# ---------- Importación avanzada: límites, codificaciones y fragmentos ----------
+
+def test_config_importacion_permite_mas_de_100000_filas(client):
+    response = client.get("/api/importar/config")
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["max_rows"] >= 100_000
+    assert data["max_bytes"] >= 100 * 1024 * 1024
+    assert 0 < data["chunk_bytes"] <= 4 * 1024 * 1024
+    assert {".csv", ".tsv", ".xlsx", ".json"} <= set(data["extensiones"])
+
+
+@pytest.mark.parametrize("encoding,delimiter", [("utf-8-sig", ";"), ("utf-16", ",")])
+def test_importa_csv_con_bom_y_codificaciones(client, encoding, delimiter):
+    import io
+
+    login(client)
+    header = ["codigo", "huesped", "fecha", "marca", "moneda", "ingresos", "noches"]
+    lineas = [delimiter.join(header)]
+    for i in range(1, 4):
+        lineas.append(delimiter.join([
+            f"BOM-{encoding}-{i}", f"Huesped {i}", "2026-03-05", "Marca BOM", "CLP", "120000", "2",
+        ]))
+    contenido = ("\n".join(lineas) + "\n").encode(encoding)
+    response = post(client, "/api/importar", files={
+        "file": (f"bom_{encoding}.csv", contenido, "text/csv"),
+    })
+    assert response.status_code == 200, response.text
+    assert response.json()["filas_exitosas"] == 3, response.json()
+
+
+def test_importa_json_ndjson_y_detecta_formato_por_contenido(client):
+    import json as json_lib
+
+    from app.etl import detectar_formato, leer_tabla
+
+    login(client)
+    registros = [
+        {"codigo": "NDJSON-1", "fecha": "2026-04-01", "marca": "Marca ND", "moneda": "CLP", "ingresos": 90000, "noches": 1},
+        {"codigo": "NDJSON-2", "fecha": "2026-04-02", "marca": "Marca ND", "moneda": "CLP", "ingresos": 95000, "noches": 1},
+    ]
+    contenido = ("\n".join(json_lib.dumps(r) for r in registros)).encode("utf-8")
+    assert detectar_formato("sin_extension", contenido) == "json"
+    filas, columnas = leer_tabla("sin_extension", contenido)
+    assert len(filas) == 2 and "codigo" in columnas
+
+    response = post(client, "/api/importar", files={
+        "file": ("registros.json", contenido, "application/x-ndjson"),
+    })
+    assert response.status_code == 200, response.text
+    assert response.json()["filas_exitosas"] == 2, response.json()
+
+
+def test_subida_fragmentada_extremo_a_extremo(client, monkeypatch):
+    import hashlib
+
+    monkeypatch.setattr("app.main.UPLOAD_CHUNK_BYTES", 64)
+    login(client)
+    contenido = (
+        "codigo,huesped,fecha,marca,moneda,ingresos,noches\n"
+        "CHUNK-1,Ana,2026-05-01,Marca Chunk,CLP,100000,1\n"
+        "CHUNK-2,Bea,2026-05-02,Marca Chunk,CLP,110000,1\n"
+    ).encode("utf-8")
+    total = (len(contenido) + 63) // 64
+    assert total >= 2
+    creacion = post(client, "/api/importar/sesiones", json={
+        "nombre_archivo": "fragmentado.csv",
+        "tamano_bytes": len(contenido),
+        "total_chunks": total,
+        "sha256": hashlib.sha256(contenido).hexdigest(),
+        "mapeo": {},
+    })
+    assert creacion.status_code == 200, creacion.text
+    upload_id = creacion.json()["upload_id"]
+
+    for indice in range(total):
+        parte = contenido[indice * 64:(indice + 1) * 64]
+        respuesta = post(client, f"/api/importar/sesiones/{upload_id}/chunks/{indice}", files={
+            "file": (f"parte{indice}", parte, "application/octet-stream"),
+        })
+        assert respuesta.status_code == 200, respuesta.text
+    assert respuesta.json()["recibidos"] == total
+
+    final = post(client, f"/api/importar/sesiones/{upload_id}/finalizar")
+    assert final.status_code == 200, final.text
+    assert final.json()["filas_exitosas"] == 2, final.json()
+    assert final.json()["nombre_archivo"] == "fragmentado.csv"
+
+
+def test_subida_fragmentada_rechaza_hash_incorrecto(client, monkeypatch):
+    import hashlib
+
+    monkeypatch.setattr("app.main.UPLOAD_CHUNK_BYTES", 64)
+    login(client)
+    contenido = b"codigo,fecha,marca\nabc,2026-01-01,Marca Hash\n"
+    total = (len(contenido) + 63) // 64
+    creacion = post(client, "/api/importar/sesiones", json={
+        "nombre_archivo": "hash.csv",
+        "tamano_bytes": len(contenido),
+        "total_chunks": total,
+        "sha256": "0" * 64,
+        "mapeo": {},
+    })
+    assert creacion.status_code == 200, creacion.text
+    upload_id = creacion.json()["upload_id"]
+    for indice in range(total):
+        respuesta = post(client, f"/api/importar/sesiones/{upload_id}/chunks/{indice}", files={
+            "file": (f"parte{indice}", contenido[indice * 64:(indice + 1) * 64], "application/octet-stream"),
+        })
+        assert respuesta.status_code == 200, respuesta.text
+    final = post(client, f"/api/importar/sesiones/{upload_id}/finalizar")
+    assert final.status_code == 409
+    assert "SHA-256" in final.json()["detail"]
+
+
+def test_etl_procesa_mas_de_100000_filas():
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+
+    from app.database import Base
+    from app.etl import ejecutar_carga
+
+    filas = 100_001
+    contenido = (
+        "fecha,marca,moneda,ocupacion,habitaciones_disp,adr\n"
+        + "2026-06-15,Marca Masiva,CLP,70,100,50000\n" * filas
+    ).encode("utf-8")
+    engine = create_engine(
+        "sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    Base.metadata.create_all(bind=engine)
+    sesion = sessionmaker(bind=engine)()
+    try:
+        carga = ejecutar_carga(sesion, "masivo.csv", contenido, "test", {})
+        assert carga.estado == "completada", carga.mensaje_error
+        assert carga.filas_procesadas == filas
+        assert carga.filas_exitosas == filas, carga.mensaje_error
+        assert carga.filas_fallidas == 0
+    finally:
+        sesion.close()
+        engine.dispose()
+
+
+def test_parser_ine_emat_indicadores_reales(monkeypatch):
+    """El XLSX oficial se convierte en ocupación/ADR/RevPAR verificables."""
+    from io import BytesIO
+
+    from openpyxl import Workbook
+
+    from app import mercado_publico
+
+    libro = Workbook()
+    libro.remove(libro.active)
+    for hoja, valor in (("16", 40.5), ("22", 30000.0), ("25", 80000.0)):
+        ws = libro.create_sheet(hoja)
+        ws.append(["Cuadro de prueba"])
+        ws.append([None])
+        ws.append(["Región / Destino turístico", "Jul-26", "Ago-26/R"])
+        ws.append(["Total nacional", valor, valor * 1.1])
+    destino = BytesIO()
+    libro.save(destino)
+
+    monkeypatch.setattr(mercado_publico, "fetch_bytes", lambda *a, **k: destino.getvalue())
+    mercado_publico.clear_cache()
+    refs = mercado_publico._ine_emat_references("CLP", cache_ttl=0, force=True)
+
+    assert {ref["metrica"] for ref in refs} == {"ocupacion", "adr", "revpar"}
+    assert {ref["periodo"] for ref in refs} == {"2026-07", "2026-08"}
+    assert all(
+        ref["moneda"] == "CLP" and ref["url"].startswith("https://www.ine.gob.cl")
+        for ref in refs
+    )
+    assert any(ref["metrica"] == "ocupacion" and ref["valor"] == 40.5 for ref in refs)
+
+
+def test_cron_mercado_diario_requiere_secret(client, monkeypatch):
+    monkeypatch.setenv("CRON_SECRET", "secreto-de-prueba")
+    assert client.post("/api/cron/mercado-diario").status_code == 401
+    respuesta = client.post(
+        "/api/cron/mercado-diario",
+        headers={"Authorization": "Bearer secreto-incorrecto"},
+    )
+    assert respuesta.status_code == 401
 
 
 if __name__ == "__main__":

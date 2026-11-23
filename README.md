@@ -10,7 +10,7 @@ Dashboard web hotelero comercial y operativo. Incluye backend API (FastAPI), int
 - **Métricas por período:** selector de granularidad **día / semana / mes / año**, rango `desde`/`hasta` y filtro por propiedad. Día y semana se agregan desde `hecho_metrica_diaria`; mes y año desde `hecho_metrica_mensual`.
 - **Operación diaria:** tareas, incidencias, mantenimiento, inventario, objetos perdidos y checklists, con alcance por propiedad.
 - **Habitaciones y dormitorios:** ocupación, ADR y RevPAR **por tipo** (con capacidad declarada) y **por número de habitación**, con noches vendidas, ingresos, ocupación del período e incidencias abiertas. Cada incidencia enlaza con el contexto del huésped de esa habitación.
-- **Mercado hotelero:** comparación de largo plazo contra referencias públicas con **fuente y período** (ADR, RevPAR, ocupación y **precio público a largo plazo**). Se registran a mano, se importan en CSV/TSV/XLSX/JSON o se sincronizan manualmente desde APIs públicas sin clave (EA Hospitality Pulse y Apartments Zürich); la plataforma no estima precios de mercado.
+- **Mercado hotelero:** comparación en tiempo real con **actualización diaria** contra referencias públicas verificables de Chile (INE-EMAT) con **fuente, URL, período y moneda** (ADR, RevPAR, ocupación). Se registran a mano, se importan en CSV/TSV/XLSX/JSON o se sincronizan desde fuentes públicas sin clave; la plataforma no estima precios de mercado y degrada al último válido si fallan las fuentes.
 - **Gestión de datos:** CRUD de reservas, importación autenticada (CSV/TSV/XLSX/JSON), historial de cargas, auditoría y exportación CSV.
 - **Seguridad:**
   - El dashboard `index.html` **no se entrega sin sesión**: el servidor responde `302` a `/login.html` y el frontend oculta la interfaz hasta confirmar `/api/auth/me`.
@@ -116,19 +116,26 @@ Compatible con Neon, Supabase, Amazon RDS, Render, Railway y cualquier PostgreSQ
 
 ## Formato de importación
 
-Se aceptan CSV, TSV, XLSX y JSON, hasta **512 MB, 1.000.000 de filas y 100 columnas** (el mismo límite en frontend, API y Caddy). Campos reconocidos: fecha o mes/año, propiedad, moneda, ocupación, ADR, RevPAR, ingresos, noches, capacidad disponible, canal, nacionalidad, segmento, anticipación, código/huésped/estado de reserva, incidencias, área, satisfacción y NPS. Las referencias de mercado admiten además `fuente`, `metrica` (`adr`, `precio`, `revpar`, `ocupacion`), `periodo`, `valor`, `url`, `tipo_habitacion` y `notas` (hasta 512 MB por archivo).
+Se aceptan CSV, TSV, TXT, XLSX y JSON (array, envelopes `data`/`rows`/`registros` y NDJSON), con BOM UTF-8, UTF-16 o Windows-1252, hasta **1 GB, 1.000.000 de filas y 200 columnas**. Los archivos mayores de 4 MB se suben automáticamente en fragmentos con verificación SHA-256, por el límite de cuerpo de Vercel. Los límites vigentes se consultan en `GET /api/importar/config` y se configuran con `NORUS_IMPORT_MAX_ROWS`, `NORUS_UPLOAD_MAX_BYTES`, `NORUS_UPLOAD_CHUNK_BYTES` y `NORUS_ETL_BATCH_SIZE`. Campos reconocidos: fecha o mes/año, propiedad, moneda, ocupación, ADR, RevPAR, ingresos, noches, capacidad disponible, canal, nacionalidad, segmento, anticipación, código/huésped/estado de reserva, incidencias, área, satisfacción y NPS. Las referencias de mercado admiten además `fuente`, `metrica` (`adr`, `precio`, `revpar`, `ocupacion`), `periodo`, `valor`, `url`, `tipo_habitacion` y `notas`.
 
-### Comparación con APIs públicas (sin clave)
+### Comparación con fuentes públicas reales (sin clave)
 
-Desde **Mercado → Sincronizar API pública** se pueden incorporar referencias verificables sin API key:
+La fuente por defecto es **INE · EMAT (Chile)**, el libro oficial de la Encuesta Mensual de Alojamiento Turístico del Instituto Nacional de Estadísticas:
 
-- **EA Hospitality Pulse** (`https://eahospitalitypulse.com/api/v1/rate-observations.json`): tarifas hoteleras directas publicadas en USD, convención de 2 noches y 30 días de anticipación. Uso razonable con atribución a EA Hospitality Pulse y enlace a `https://eahospitalitypulse.com`.
-- **Apartments Zürich** (`https://www.apartments.zuerich/api/prices`): precios mensuales y de larga estancia en CHF; útiles para la métrica «Precio público a largo plazo».
-- **Open Exchange Rate API** (`https://open.er-api.com/v6/latest/{MONEDA}`): conversión a la moneda configurada en el dashboard.
+- URL: `https://www.ine.gob.cl/docs/default-source/actividad-del-turismo/cuadros-estadisticos-dos/serie-histórica-metodología-2017/series-mensuales-de-julio-2016-a-la-fecha.xlsx?sfvrsn=a6e68f7_97`.
+- Cuadros 16 (ocupación, %), 22 (RevPAR, CLP) y 25 (ADR, CLP), por región y mes. Cifras oficiales, sin estimaciones; las provisionales se identifican con `/R` en el cuadro.
+- Otros orígenes opcionales, **de otras geografías**, deben habilitarse explícitamente con `NORUS_MARKET_PUBLIC_SOURCES`: **EA Hospitality Pulse** (África Oriental, USD) y **Apartments Zürich** (Suiza, CHF).
+- **Open Exchange Rate API** (`https://open.er-api.com/v6/latest/{MONEDA}`) solo convierte monedas; es auxiliar, no fuente turística.
 
-La sincronización es manual (solo `admin`/`editor`), usa lista blanca de hosts HTTPS, timeout, límite de respuesta y caché. No se descarga nada automáticamente al abrir el dashboard y cada referencia guarda fuente, URL, período, moneda y notas de atribución.
+La sincronización manual (`admin`/`editor`) y el **refresco diario** usan lista blanca de hosts HTTPS, timeout, límite de respuesta y caché. Cada referencia guarda fuente, URL, período, moneda y notas de atribución. `GET /api/mercado/tiempo-real` compara el warehouse interno con esas referencias en la misma moneda y unidad (ADR/RevPAR por habitación-noche, ocupación en %), con caché de 60 s. Si fallan las fuentes, degrada al último análisis válido y lo marca como `historico` con la señal `ultimo_valido`; **nunca inventa precios**.
 
-- Los archivos cerca del límite se procesan en memoria; el navegador y el servidor necesitan RAM suficiente (especialmente XLSX, que se expande antes de leerse). En despliegues serverless, el proveedor puede imponer un límite inferior de cuerpo y memoria; usa Docker/Caddy para cargas de cientos de MB.
+#### Actualización diaria automática
+
+`vercel.json` registra el cron `0 3 * * *` sobre `GET /api/cron/mercado-diario`, protegido con `Authorization: Bearer $CRON_SECRET`. El cron fuerza la lectura de fuentes, guarda las referencias y calienta la instantánea global en las monedas de `NORUS_CRON_MONEDAS` (por defecto `CLP,USD`). Las vistas por propiedad se calculan bajo demanda con esas referencias ya frescas; para calentarlas todas en el cron, define `NORUS_CRON_WARM_PROPERTIES=1`.
+
+El navegador aplica *stale-while-revalidate* en `sessionStorage`: pinta el último snapshot válido antes de esperar al servidor y lo reemplaza al llegar la respuesta. Si el snapshot tiene más de 24 h, fuerza `refresh=1` como respaldo aunque el cron no esté disponible. Para forzar una lectura inmediata, usa el botón de actualización del apartado Mercado.
+
+- Los archivos grandes se procesan en memoria; el navegador y la Function necesitan RAM suficiente (especialmente XLSX, que se expande antes de leerse). La subida fragmentada resuelve el límite de cuerpo de Vercel; para cargas muy por encima de 1 GB usa Docker/Caddy.
 - Usa la moneda ISO 4217 de cada fila; si falta, se aplica `NORUS_DEFAULT_CURRENCY`. Los importes de monedas distintas no se suman.
 - “Habitaciones disponibles” debe representar capacidad del período en noches-habitación, no solo habitaciones físicas.
 - Los hechos mensuales se reemplazan por propiedad/mes/moneda al reimportar. Importa extracciones completas del período.
@@ -137,22 +144,21 @@ La sincronización es manual (solo `admin`/`editor`), usa lista blanca de hosts 
 
 ## Datos de demostración
 
-`scripts/seed_demo.py` genera un conjunto determinista y **marcado como demo** para probar la plataforma con volumen real (>100.000 filas): propiedades, tipos de habitación, canales, nacionalidades, reservas, métricas diarias/mensuales, incidencias y referencias de mercado. Conserva los usuarios existentes (nunca borra `usuario`).
+La demo es **real y verificable**. `scripts/seed_demo_real.py` (y `POST /api/demo/cargar`) descarga el dataset hotelero de Antonio, de Almeida & Nunes (2019), *Hotel booking demand datasets*, Data in Brief 22, 41-49, DOI `10.1016/j.dib.2018.11.126`, licencia **CC BY 4.0** (119.390 reservas). Carga hasta 120.000 filas; ADR original en EUR se convierte a CLP con el tipo de cambio real de `open.er-api.com` leído en el momento, y se registran además las referencias reales de INE-EMAT con su URL y período. La capacidad de 100 habitaciones por hotel (20 por tipo) es una **referencia declarada**, no un dato observado, y queda documentada en `CargaArchivo.mensaje_error`.
 
 ```powershell
-.\.venv\Scripts\python.exe -m scripts.seed_demo --rows 120000 --reset
+.\.venv\Scripts\python.exe -m scripts.seed_demo_real --filas 25000
 ```
 
-- `--rows` fija el número de reservas (por defecto 120.000).
-- `--reset` elimina primero los hechos y dimensiones de demo (no los usuarios).
-- `--out directorio` escribe además archivos de muestra en CSV, TSV, XLSX y JSON para probar la importación.
-- Los valores de mercado llevan `fuente="demo"` y se describen como ilustrativos: **nunca** representan estadísticas públicas reales.
+- `--filas` fija el número de reservas (por defecto 25.000).
+- El borrado (`DELETE /api/demo` o `scripts.seed_demo.limpiar_demo`) es **selectivo**: elimina solo la demo marcada como `seed_demo`, respeta importaciones reales posteriores y nunca toca usuarios ni auditoría.
+- `scripts/seed_demo.py` sigue disponible para generar archivos de muestra sintéticos (`--out`) para probar la importación; esos valores sí se describen como ilustrativos y llevan `fuente="demo (generado)"`.
 
 ## Despliegue en Vercel
 
-El proyecto incluye el adaptador `api/index.py`, `vercel.json` (función Python 3.12, 60 s, 1 GB) y `pyproject.toml` con `tool.vercel.entrypoint = "api.index:app"`. `.vercelignore` y `excludeFiles` evitan subir los archivos pesados de demo y la base SQLite local.
+El proyecto incluye el adaptador `api/index.py`, `vercel.json` (función Python 3.12, 300 s, 1 GB, cron diario) y `pyproject.toml` con `tool.vercel.entrypoint = "api.index:app"`. `.vercelignore` y `excludeFiles` evitan subir los archivos pesados de demo y la base SQLite local. Variables nuevas: `CRON_SECRET`, `NORUS_MARKET_PUBLIC_SOURCES=ine_emat`, `NORUS_CRON_MONEDAS=CLP,USD` y, opcionalmente, `NORUS_CRON_WARM_PROPERTIES`.
 
-> **Importante:** Vercel limita el cuerpo de petición/respuesta de una Function a **4.5 MB** (`FUNCTION_PAYLOAD_TOO_LARGE`). La configuración local de 512 MB / 1.000.000 filas está pensada para Docker, Render, Railway o VPS. En Vercel, usa archivos pequeños o sube el archivo a object storage y procesarlo por lotes. SQLite en `/tmp` es efímero: en producción **es obligatorio `DATABASE_URL`** con PostgreSQL gestionado.
+> **Importante:** Vercel limita el cuerpo de petición/respuesta de una Function a **4.5 MB** (`FUNCTION_PAYLOAD_TOO_LARGE`). El dashboard resuelve esto con subida fragmentada de 4 MB ensamblada en PostgreSQL, con verificación SHA-256, hasta 1 GB / 1.000.000 de filas. SQLite en `/tmp` es efímero: en producción **es obligatorio `DATABASE_URL`** con PostgreSQL gestionado y la migración `f4a7c9e1b253` aplicada.
 
 ### Paso a paso con Vercel CLI
 

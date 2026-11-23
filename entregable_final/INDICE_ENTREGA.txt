@@ -1,0 +1,27 @@
+NorusLuum Dashboard — Entrega final TIHI84
+Versión documental y de software: 2.2.0
+
+ENTREGABLES OBLIGATORIOS
+1. Informe_Final_NorusLuum_Dashboard.pdf
+2. Norus_Intelligence_Platformv.zip  (ZIP final preparado para la entrega; 105 MB, almacenado en Git LFS)
+3. Manual_Instalacion_NorusLuum.pdf
+4. Manual_Usuario_NorusLuum.pdf
+
+COMPLEMENTARIOS
+5. Manual_Construccion_NorusLuum.pdf
+6. Manual_Comandos_y_Fortalezas_NorusLuum.pdf
+7. Guia_Entrega_y_Defensa_NorusLuum.pdf
+8. Diapositivas_Respaldo_NorusLuum.pptx
+9. Norus_Intelligence_Platform_v2.2.0.zip (ZIP limpio de respaldo, 3,6 MB)
+
+También se incluyen los DOCX de origen para permitir edición posterior.
+
+PENDIENTE ANTES DE ENVIAR EL CORREO
+- RUT de Gustavo Pardo.
+- RUT de Paula Fernández.
+- Enlace único de descarga a los cuatro entregables.
+Reemplazar los marcadores [COMPLETAR] en el informe y en la guía.
+
+Correo: armin.brun@inacapmail.cl
+Asunto: Entrega final Proyecto de Título – Sección TIHI84-D-IEI-N8-P1-C1 – Sede Apoquindo
+Fecha límite: viernes 27-nov-2026, 16:30

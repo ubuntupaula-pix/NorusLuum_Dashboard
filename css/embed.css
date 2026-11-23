@@ -1,0 +1,47 @@
+:root {
+  color-scheme: light;
+  --ink: #142b36;
+  --muted: #60737c;
+  --line: #dfe7e8;
+  --paper: #ffffff;
+  --bg: #f4f7f6;
+  --teal: #167c80;
+  --gold: #a98b5f;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+.norus-widget { padding: 18px; display: grid; gap: 14px; }
+.norus-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.norus-eyebrow { margin: 0 0 4px; font-size: 10px; letter-spacing: .14em; color: var(--muted); font-weight: 700; }
+.norus-head h1 { margin: 0; font-size: 20px; font-weight: 650; letter-spacing: -.01em; }
+.norus-status {
+  flex: none; border-radius: 999px; padding: 5px 11px; font-size: 11px; font-weight: 700;
+  background: #e8f3f2; color: #0f666a; border: 1px solid #c7e2e0;
+}
+.norus-status[data-estado="parcial"] { background: #fff5e3; color: #8a6216; border-color: #f0d9aa; }
+.norus-status[data-estado="historico"], .norus-status[data-estado="sin_datos"] { background: #fdecec; color: #9d2f2f; border-color: #f1cccc; }
+.norus-updated { margin: -6px 0 0; font-size: 11px; color: var(--muted); }
+.norus-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
+.norus-kpi { background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 11px 13px; }
+.norus-kpi span { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); }
+.norus-kpi strong { display: block; margin-top: 4px; font-size: 19px; font-variant-numeric: tabular-nums; }
+.norus-kpi[data-tono="alerta"] strong { color: #a33535; }
+.norus-kpi[data-tono="oportunidad"] strong { color: #0f7a52; }
+.norus-card { background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+.norus-card-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px; }
+.norus-card-head h2 { margin: 0; font-size: 13px; font-weight: 650; }
+.norus-card-head span { font-size: 11px; color: var(--muted); }
+.norus-chart-wrap { position: relative; height: 240px; }
+.norus-signals { list-style: none; margin: 0; padding: 0; display: grid; gap: 7px; }
+.norus-signals li { border-left: 3px solid var(--line); padding: 5px 9px; font-size: 12px; background: #fafcfc; }
+.norus-signals li[data-severidad="alerta"] { border-color: #b84848; }
+.norus-signals li[data-severidad="oportunidad"] { border-color: #1d8b60; }
+.norus-signals li[data-severidad="info"] { border-color: var(--gold); }
+.norus-muted { color: var(--muted); }
+.norus-foot { font-size: 10px; color: var(--muted); line-height: 1.5; }
+@media (max-width: 480px) { .norus-head { flex-direction: column; } }

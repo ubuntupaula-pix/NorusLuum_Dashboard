@@ -26,7 +26,7 @@ import sys
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-from sqlalchemy import delete, insert
+from sqlalchemy import delete, insert, select
 
 from app.database import SessionLocal
 from app.models import (
@@ -59,6 +59,7 @@ from app.models import (
 PROPIEDADES = [
     ("Norus Luum Providencia", 96, "CLP"),
     ("Norus Luum Vitacura", 120, "CLP"),
+    ("Norus Luum Las Condes", 132, "CLP"),
     ("Norus Luum Costanera", 180, "CLP"),
     ("Norus Luum Valparaíso", 84, "CLP"),
     ("Norus Luum Concón", 140, "CLP"),
@@ -145,6 +146,16 @@ TEMPORADA = {
 TARIFA_BASE_CLP = 68_000.0
 TARIFA_BASE_USD = 78.0
 
+# Toda fila generada aquí queda vinculada a una carga con este nombre. Ese
+# marcador permite borrar únicamente los datos demo sin tocar importaciones
+# reales que el usuario haya cargado después.
+DEMO_CARGA_NOMBRE = "seed_demo"
+
+
+def demo_carga_ids(db) -> list[int]:
+    """Ids de las cargas de demostración presentes en la base de datos."""
+    return list(db.scalars(select(CargaArchivo.id).where(CargaArchivo.nombre_archivo == DEMO_CARGA_NOMBRE)))
+
 
 def _weighted(rng: random.Random, options):
     total = sum(item[-1] for item in options)
@@ -176,27 +187,75 @@ def _bulk(db, model, rows, chunk: int = 5000) -> None:
     db.commit()
 
 
+def _get_or_create_dim(db, model, filas: list[dict], clave: str) -> list:
+    """Reutiliza dimensiones existentes en vez de violar su constraint única."""
+    claves = [fila[clave] for fila in filas]
+    existentes = {
+        getattr(obj, clave): obj
+        for obj in db.scalars(select(model).where(getattr(model, clave).in_(claves)))
+    }
+    objetos: list = []
+    nuevos: list = []
+    for fila in filas:
+        obj = existentes.get(fila[clave])
+        if obj is None:
+            obj = model(**fila)
+            nuevos.append(obj)
+        objetos.append(obj)
+    if nuevos:
+        db.add_all(nuevos)
+        db.flush()
+    return objetos
+
+
 # ============================================================
 # GENERACIÓN
 # ============================================================
 
-def generar(rows: int, days: int, seed: int, out: Path | None) -> None:
-    rng = random.Random(seed)
-    db = SessionLocal()
-    try:
-        # ---------- Dimensiones ----------
-        marcas = []
-        for nombre, habitaciones, moneda in PROPIEDADES:
-            marcas.append(DimMarca(nombre=nombre, habitaciones=habitaciones))
-        db.add_all(marcas)
-        db.flush()
+def generar(rows: int, days: int, seed: int, out: Path | None, db=None) -> None:
+    """Genera los datos demo.
 
-        tipos = [DimTipoHabitacion(nombre=nombre) for nombre, _, _ in TIPOS_HABITACION]
-        canales = [DimCanal(nombre=nombre, tipo=tipo) for nombre, tipo, _ in CANALES]
-        nacionalidades = [DimNacionalidad(nombre=nombre) for nombre, _ in NACIONALIDADES]
-        segmentos = [DimSegmento(nombre=nombre) for nombre, _ in SEGMENTOS]
-        db.add_all(tipos + canales + nacionalidades + segmentos)
-        db.flush()
+    Si se pasa una sesión ``db``, la reutiliza y no la cierra (la usa la API).
+    Si no se pasa, crea y cierra su propia sesión (uso desde CLI).
+    """
+    rng = random.Random(seed)
+    propia_sesion = db is None
+    if propia_sesion:
+        db = SessionLocal()
+    try:
+        # ---------- Carga que marca todas las filas como demo ----------
+        carga = CargaArchivo(
+            nombre_archivo=DEMO_CARGA_NOMBRE, formato="demo",
+            tamano_bytes=0, filas_procesadas=0, filas_exitosas=0, filas_fallidas=0,
+            estado="completada", mensaje_error="", usuario="demo",
+            creado_en=datetime.now(),
+        )
+        db.add(carga)
+        db.commit()
+        db.refresh(carga)
+
+        # ---------- Dimensiones (reutiliza las que ya existan) ----------
+        marcas = _get_or_create_dim(
+            db, DimMarca,
+            [{"nombre": nombre, "habitaciones": habitaciones} for nombre, habitaciones, _ in PROPIEDADES],
+            "nombre",
+        )
+        tipos = _get_or_create_dim(
+            db, DimTipoHabitacion,
+            [{"nombre": nombre} for nombre, _, _ in TIPOS_HABITACION], "nombre",
+        )
+        canales = _get_or_create_dim(
+            db, DimCanal,
+            [{"nombre": nombre, "tipo": tipo} for nombre, tipo, _ in CANALES], "nombre",
+        )
+        nacionalidades = _get_or_create_dim(
+            db, DimNacionalidad,
+            [{"nombre": nombre} for nombre, _ in NACIONALIDADES], "nombre",
+        )
+        segmentos = _get_or_create_dim(
+            db, DimSegmento,
+            [{"nombre": nombre} for nombre, _ in SEGMENTOS], "nombre",
+        )
 
         tipo_ids = {t.nombre: t.id for t in tipos}
         canal_ids = {c.nombre: c.id for c in canales}
@@ -205,40 +264,56 @@ def generar(rows: int, days: int, seed: int, out: Path | None) -> None:
 
         hoy = date.today()
         inicio = hoy - timedelta(days=days - 1)
-        fechas = []
+        filas_fecha = []
         for i in range(days):
             d = inicio + timedelta(days=i)
-            fechas.append(DimFecha(
-                fecha=d.isoformat(),
-                anio=d.year,
-                mes=d.month,
-                mes_nombre=MESES[d.month - 1],
-                trimestre=(d.month - 1) // 3 + 1,
-                dia_semana=d.weekday(),
-                nombre_dia=DIAS[d.weekday()],
-                es_fin_semana=1 if d.weekday() >= 5 else 0,
-            ))
-        db.add_all(fechas)
-        db.flush()
+            filas_fecha.append({
+                "fecha": d.isoformat(),
+                "anio": d.year,
+                "mes": d.month,
+                "mes_nombre": MESES[d.month - 1],
+                "trimestre": (d.month - 1) // 3 + 1,
+                "dia_semana": d.weekday(),
+                "nombre_dia": DIAS[d.weekday()],
+                "es_fin_semana": 1 if d.weekday() >= 5 else 0,
+            })
+        fechas = _get_or_create_dim(db, DimFecha, filas_fecha, "fecha")
         fecha_ids = {f.fecha: f.id for f in fechas}
 
-        # ---------- Capacidad declarada ----------
-        capacidad = []
+        # ---------- Capacidad declarada (única por marca + tipo) ----------
+        capacidad_existente = {
+            (c.marca_id, c.tipo_habitacion_id): c
+            for c in db.scalars(select(CapacidadHabitacion))
+        }
+        nuevas_capacidades = []
         for marca in marcas:
             reparto = rng.sample(range(1, 100), len(TIPOS_HABITACION))
             total_reparto = sum(reparto)
             for (tipo_nombre, _, _), peso in zip(TIPOS_HABITACION, reparto):
-                capacidad.append(CapacidadHabitacion(
-                    marca_id=marca.id,
-                    tipo_habitacion_id=tipo_ids[tipo_nombre],
-                    habitaciones=max(1, round(marca.habitaciones * peso / total_reparto)),
-                    actualizado_por="demo",
-                ))
-        db.add_all(capacidad)
+                clave = (marca.id, tipo_ids[tipo_nombre])
+                habitaciones = max(1, round(marca.habitaciones * peso / total_reparto))
+                actual = capacidad_existente.get(clave)
+                if actual is not None:
+                    actual.habitaciones = habitaciones
+                    actual.actualizado_por = "demo"
+                else:
+                    nueva = CapacidadHabitacion(
+                        marca_id=marca.id,
+                        tipo_habitacion_id=tipo_ids[tipo_nombre],
+                        habitaciones=habitaciones,
+                        actualizado_por="demo",
+                    )
+                    nuevas_capacidades.append(nueva)
+                    capacidad_existente[clave] = nueva
+        if nuevas_capacidades:
+            db.add_all(nuevas_capacidades)
         db.flush()
 
         # ---------- Reservas + agregados ----------
-        rooms_by_marca = {m.id: _habitaciones(i, m.habitaciones) for i, m in enumerate(marcas)}
+        rooms_by_marca = {
+            marca.id: _habitaciones(i, habitaciones)
+            for i, (marca, (_, habitaciones, _)) in enumerate(zip(marcas, PROPIEDADES))
+        }
         moneda_by_marca = {m.id: moneda for m, (_, _, moneda) in zip(marcas, PROPIEDADES)}
         marca_weights = [(m, 40 + m.habitaciones // 4) for m in marcas]
 
@@ -285,7 +360,7 @@ def generar(rows: int, days: int, seed: int, out: Path | None) -> None:
                 "marca_id": marca.id,
                 "segmento_id": seg_ids[seg_nombre],
                 "tipo_habitacion_id": tipo_ids[tipo_nombre],
-                "carga_id": None,
+                "carga_id": carga.id,
                 "creado_en": ahora,
             })
             export_rows.append({
@@ -327,7 +402,7 @@ def generar(rows: int, days: int, seed: int, out: Path | None) -> None:
                     "nps": float(rng.randint(-20, 100)),
                     "fecha_id": fecha_ids[fecha],
                     "marca_id": marca.id,
-                    "carga_id": None,
+                    "carga_id": carga.id,
                 })
 
         print(f"  · reservas: {len(reservas):,}")
@@ -357,7 +432,7 @@ def generar(rows: int, days: int, seed: int, out: Path | None) -> None:
                 "ingresos": round(ingresos, 2),
                 "noches_vendidas": round(noches, 2),
                 "habitaciones_disponibles": disponibles,
-                "carga_id": None,
+                "carga_id": carga.id,
             })
             m = mensual.setdefault((d.year, d.month, marca_id), [0.0, 0.0, 0.0])
             m[0] += ingresos
@@ -378,11 +453,29 @@ def generar(rows: int, days: int, seed: int, out: Path | None) -> None:
                 "ingresos": round(ingresos, 2),
                 "noches_vendidas": round(noches, 2),
                 "habitaciones_disponibles": round(disponibles, 2),
-                "carga_id": None,
+                "carga_id": carga.id,
             })
+        # No sobrescribir agregados reales que ya existan para la misma clave.
+        ya_diarias = set(db.execute(select(
+            HechoMetricaDiaria.fecha, HechoMetricaDiaria.marca_id, HechoMetricaDiaria.moneda
+        )).all())
+        diarias = [
+            fila for fila in diarias
+            if (fila["fecha"], fila["marca_id"], fila["moneda"]) not in ya_diarias
+        ]
+        ya_mensuales = set(db.execute(select(
+            HechoMetricaMensual.anio, HechoMetricaMensual.mes,
+            HechoMetricaMensual.marca_id, HechoMetricaMensual.moneda
+        )).all())
+        mensuales = [
+            fila for fila in mensuales
+            if (fila["anio"], fila["mes"], fila["marca_id"], fila["moneda"]) not in ya_mensuales
+        ]
         print(f"  · métricas diarias: {len(diarias):,} · mensuales: {len(mensuales):,}")
-        _bulk(db, HechoMetricaDiaria, diarias)
-        _bulk(db, HechoMetricaMensual, mensuales)
+        if diarias:
+            _bulk(db, HechoMetricaDiaria, diarias)
+        if mensuales:
+            _bulk(db, HechoMetricaMensual, mensuales)
 
         # ---------- Operación hotelera (incidencias vinculadas) ----------
         ops_incidencias: list[dict] = []
@@ -503,28 +596,28 @@ def generar(rows: int, days: int, seed: int, out: Path | None) -> None:
                 base = TARIFA_BASE_USD if moneda_by_marca[marca.id] == "USD" else TARIFA_BASE_CLP
                 ref_adr = round(base * factor * rng.uniform(1.0, 1.25), 2)
                 referencias.append({
-                    "marca_id": marca.id, "fuente": "demo (ilustrativo)", "url": "",
+                    "marca_id": marca.id, "fuente": "demo (generado)", "url": "",
                     "tipo": "mercado", "metrica": "adr", "periodo": periodo,
                     "valor": ref_adr, "moneda": moneda_by_marca[marca.id],
                     "tipo_habitacion": "", "notas": nota,
                     "creado_por": "demo", "creado_en": ahora, "actualizado_en": ahora,
                 })
                 referencias.append({
-                    "marca_id": marca.id, "fuente": "demo (ilustrativo)", "url": "",
+                    "marca_id": marca.id, "fuente": "demo (generado)", "url": "",
                     "tipo": "mercado", "metrica": "precio", "periodo": periodo,
                     "valor": round(ref_adr * 1.35, 2), "moneda": moneda_by_marca[marca.id],
                     "tipo_habitacion": "", "notas": nota + " Precio público de largo plazo (rack).",
                     "creado_por": "demo", "creado_en": ahora, "actualizado_en": ahora,
                 })
                 referencias.append({
-                    "marca_id": marca.id, "fuente": "demo (ilustrativo)", "url": "",
+                    "marca_id": marca.id, "fuente": "demo (generado)", "url": "",
                     "tipo": "mercado", "metrica": "ocupacion", "periodo": periodo,
                     "valor": round(min(95.0, rng.uniform(45, 88) * factor), 2),
                     "moneda": moneda_by_marca[marca.id], "tipo_habitacion": "", "notas": nota,
                     "creado_por": "demo", "creado_en": ahora, "actualizado_en": ahora,
                 })
                 referencias.append({
-                    "marca_id": marca.id, "fuente": "demo (ilustrativo)", "url": "",
+                    "marca_id": marca.id, "fuente": "demo (generado)", "url": "",
                     "tipo": "mercado", "metrica": "revpar", "periodo": periodo,
                     "valor": round(ref_adr * rng.uniform(0.6, 0.85), 2),
                     "moneda": moneda_by_marca[marca.id], "tipo_habitacion": "", "notas": nota,
@@ -549,7 +642,7 @@ def generar(rows: int, days: int, seed: int, out: Path | None) -> None:
                     ("revpar", round(ref_adr * rng.uniform(0.6, 0.85), 2)),
                 ):
                     referencias.append({
-                        "marca_id": None, "fuente": "demo (ilustrativo)", "url": "",
+                        "marca_id": None, "fuente": "demo (generado)", "url": "",
                         "tipo": "mercado", "metrica": metrica, "periodo": periodo,
                         "valor": valor, "moneda": moneda, "tipo_habitacion": "",
                         "notas": nota, "creado_por": "demo",
@@ -560,14 +653,8 @@ def generar(rows: int, days: int, seed: int, out: Path | None) -> None:
         print(f"  · referencias de mercado: {len(referencias):,}")
         _bulk(db, ReferenciaMercado, referencias)
 
-        carga = CargaArchivo(
-            nombre_archivo="seed_demo", formato="demo",
-            tamano_bytes=0, filas_procesadas=len(reservas),
-            filas_exitosas=len(reservas), filas_fallidas=0,
-            estado="completada", mensaje_error="",
-            usuario="demo", creado_en=ahora,
-        )
-        db.add(carga)
+        carga.filas_procesadas = len(reservas)
+        carga.filas_exitosas = len(reservas)
         db.commit()
 
         print("  · datos de demostración cargados")
@@ -575,7 +662,8 @@ def generar(rows: int, days: int, seed: int, out: Path | None) -> None:
         if out is not None:
             _escribir_archivos(out, export_rows, referencias)
     finally:
-        db.close()
+        if propia_sesion:
+            db.close()
 
 
 # ============================================================
@@ -635,7 +723,100 @@ def _escribir_archivos(out: Path, reservas: list[dict], referencias: list[dict])
 
 
 # ============================================================
-# LIMPIEZA
+# BORRADO SELECTIVO DE DATOS DEMO
+# ============================================================
+
+def limpiar_demo(db) -> dict:
+    """Borra únicamente los datos generados por este módulo.
+
+    Conserva usuarios, cuentas, eventos de auditoría y cualquier importación
+    real. Devuelve un resumen de filas eliminadas por tabla.
+    """
+    ids = demo_carga_ids(db)
+    borrados: dict[str, int] = {}
+
+    def _borrar(model, condicion) -> None:
+        borrados[model.__tablename__] = db.query(model).filter(condicion).delete(synchronize_session=False)
+
+    if ids:
+        for model in (
+            HechoReserva, HechoMetricaDiaria, HechoMetricaMensual, HechoIncidencia,
+        ):
+            _borrar(model, model.carga_id.in_(ids))
+
+    # ReferenciaMercado no tiene carga_id: se identifica por su fuente.
+    _borrar(ReferenciaMercado, ReferenciaMercado.fuente == "demo (generado)")
+
+    # Los módulos de operación no tienen carga_id: se identifican por el autor.
+    for model, campo in (
+        (IncidenciaOperativa, "creado_por"),
+        (TareaOperativa, "creado_por"),
+        (OrdenMantenimiento, "creado_por"),
+        (ItemInventario, "actualizado_por"),
+        (ObjetoPerdido, "registrado_por"),
+        (EjecucionChecklist, "ejecutado_por"),
+        (CapacidadHabitacion, "actualizado_por"),
+    ):
+        _borrar(model, getattr(model, campo) == "demo")
+
+    if ids:
+        _borrar(CargaArchivo, CargaArchivo.id.in_(ids))
+
+    # Dimensiones creadas por el demo que ya no son referenciadas por nada.
+    marcas_demo = {nombre for nombre, _, _ in PROPIEDADES}
+    # La demo real usa nombres propios; se incluyen para poder borrarla también.
+    marcas_demo.update(
+        db.scalars(select(DimMarca.nombre).where(DimMarca.nombre.like("Demo real · %")))
+    )
+    tipos_demo = {nombre for nombre, _, _ in TIPOS_HABITACION}
+    canales_demo = {nombre for nombre, _, _ in CANALES}
+    nacs_demo = {nombre for nombre, _ in NACIONALIDADES}
+    segs_demo = {nombre for nombre, _ in SEGMENTOS}
+
+    referencias_dim = (
+        (DimMarca, marcas_demo, (
+            (HechoReserva, "marca_id"), (HechoMetricaDiaria, "marca_id"),
+            (HechoMetricaMensual, "marca_id"), (HechoIncidencia, "marca_id"),
+            (ReferenciaMercado, "marca_id"), (CapacidadHabitacion, "marca_id"),
+            (IncidenciaOperativa, "propiedad_id"), (TareaOperativa, "propiedad_id"),
+            (OrdenMantenimiento, "propiedad_id"), (ItemInventario, "propiedad_id"),
+            (ObjetoPerdido, "propiedad_id"), (EjecucionChecklist, "propiedad_id"),
+            (UsuarioPropiedad, "marca_id"),
+        )),
+        (DimFecha, None, (
+            (HechoReserva, "fecha_id"), (HechoIncidencia, "fecha_id"),
+        )),
+        (DimCanal, canales_demo, ((HechoReserva, "canal_id"),)),
+        (DimNacionalidad, nacs_demo, ((HechoReserva, "nacionalidad_id"),)),
+        (DimSegmento, segs_demo, ((HechoReserva, "segmento_id"),)),
+        (DimTipoHabitacion, tipos_demo, (
+            (HechoReserva, "tipo_habitacion_id"), (CapacidadHabitacion, "tipo_habitacion_id"),
+        )),
+    )
+
+    for dimension, nombres, referencias in referencias_dim:
+        consulta = select(dimension.id)
+        if nombres is not None:
+            consulta = consulta.where(dimension.nombre.in_(nombres))
+        huérfanas = []
+        for (fila_id,) in db.execute(consulta):
+            if any(
+                db.scalar(select(model.id).where(getattr(model, campo) == fila_id).limit(1)) is not None
+                for model, campo in referencias
+            ):
+                continue
+            huérfanas.append(fila_id)
+        if huérfanas:
+            borrados[dimension.__tablename__] = db.query(dimension).filter(
+                dimension.id.in_(huérfanas)
+            ).delete(synchronize_session=False)
+
+    db.commit()
+    return borrados
+
+
+# ============================================================
+# LIMPIEZA TOTAL (solo CLI)
 # ============================================================
 
 def limpiar(db) -> None:

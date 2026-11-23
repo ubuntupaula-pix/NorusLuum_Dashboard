@@ -25,6 +25,7 @@ from .auth import (
 from . import mercado_publico
 from .database import get_db
 from .etl import a_numero, leer_tabla
+from .import_config import EXTENSIONES_PERMITIDAS, UPLOAD_MAX_BYTES
 from .models import (
     DimMarca,
     EventoAuditoria,
@@ -283,11 +284,10 @@ async def import_references(
     metric alongside ADR, RevPAR and occupancy.
     """
     ext = (file.filename or "").lower().rsplit(".", 1)[-1]
-    if ext not in {"csv", "tsv", "xlsx", "json"}:
-        raise HTTPException(status_code=400, detail="Solo se admiten archivos CSV, TSV, XLSX o JSON.")
-    max_bytes = int(os.environ.get("NORUS_MARKET_IMPORT_MAX_BYTES", str(512 * 1024 * 1024)))
-    content = await file.read(max_bytes + 1)
-    if len(content) > max_bytes:
+    if f".{ext}" not in EXTENSIONES_PERMITIDAS:
+        raise HTTPException(status_code=400, detail="Solo se admiten archivos CSV, TSV, TXT, XLSX o JSON.")
+    content = await file.read(UPLOAD_MAX_BYTES + 1)
+    if len(content) > UPLOAD_MAX_BYTES:
         raise HTTPException(status_code=413, detail="El archivo de mercado supera el tamaño permitido.")
     if not content:
         raise HTTPException(status_code=400, detail="El archivo está vacío.")
@@ -634,9 +634,10 @@ def comparison(
         },
         "referencias": references,
         "nota": (
-            "Los valores del mercado provienen de referencias públicas registradas "
-            "manualmente, importadas o sincronizadas desde APIs públicas sin clave "
-            "(EA Hospitality Pulse y Apartments Zürich), siempre con fuente, URL, "
+            "Los valores del mercado provienen de referencias públicas verificables: "
+            "INE · EMAT (Chile) por defecto, además de las registradas manualmente, "
+            "importadas o sincronizadas desde fuentes opcionales de otras geografías "
+            "(EA Hospitality Pulse, Apartments Zürich). Siempre conservan fuente, URL, "
             "período y moneda. La métrica «precio» recoge tarifas públicas de largo "
             "plazo. Los períodos sin referencia se muestran vacíos; la plataforma "
             "no estima precios públicos."

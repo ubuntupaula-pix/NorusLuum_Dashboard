@@ -117,13 +117,13 @@
 
   // ---------- Cargar archivo ----------
   async function cargarArchivo(file) {
-    const okExt = /\.(csv|tsv|xlsx|json)$/i.test(file.name);
+    const okExt = /\.(csv|tsv|txt|xlsx|json)$/i.test(file.name);
     if (!okExt) {
       notificar('Formato no soportado. Usa CSV, TSV, Excel XLSX o JSON.', 'error');
       return;
     }
-    if (file.size > 512 * 1024 * 1024) {
-      notificar('El archivo supera el máximo de 512 MB.', 'error');
+    if (file.size > 1024 * 1024 * 1024) {
+      notificar('El archivo supera el máximo de 1 GB.', 'error');
       return;
     }
     try {
@@ -221,7 +221,9 @@
       if (!archivo || !window.API || !window.API.getToken()) throw new Error('Inicia sesión para importar al servidor.');
       btnApply.disabled = true;
       btnApply.textContent = 'Procesando…';
-      const resultado = await window.API.importar(archivo, window.Importador.mapeo);
+      const resultado = await window.API.importar(archivo, window.Importador.mapeo, (hecho, total) => {
+        btnApply.textContent = 'Subiendo fragmentos ' + hecho + '/' + total + '…';
+      });
       if (!resultado.filas_exitosas) throw new Error(resultado.mensaje || 'El servidor no pudo procesar ninguna fila.');
       if (window.onDatosImportados) await window.onDatosImportados(resultado);
       cerrar();

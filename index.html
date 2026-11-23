@@ -123,6 +123,17 @@
             <button class="btn btn-primary" type="button" id="dataAlertUpload">Importar datos</button>
         </div>
 
+        <div class="demo-alert" id="demoAlert" role="status" hidden>
+            <div class="demo-alert-text">
+                <strong>Datos de demostración activos</strong>
+                <span id="demoAlertDetalle">Reservas reales (CC BY 4.0) y referencias INE-EMAT; capacidad de referencia declarada.</span>
+            </div>
+            <div class="demo-alert-actions">
+                <button class="btn btn-ghost" type="button" id="demoRecargar" hidden>Recargar demo</button>
+                <button class="btn btn-ghost" type="button" id="demoBorrar" hidden>Borrar datos demo</button>
+            </div>
+        </div>
+
         <!-- ===== VIEW: RESUMEN ===== -->
         <section class="view active" id="view-resumen">
             <div class="kpi-grid" id="kpiResumen"></div>
@@ -426,14 +437,33 @@
                     <option value="anio">Año</option>
                 </select>
                 <button class="btn btn-ghost" id="marketRefresh" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.6"/><path d="M20 4v7h-7"/></svg><span>Actualizar comparación</span></button>
-                <button class="btn btn-ghost" id="marketPublicRefresh" type="button" title="Sincroniza APIs públicas sin clave: EA Hospitality Pulse y Apartments Zürich"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 21h16"/></svg><span>Sincronizar API pública</span></button>
+                <button class="btn btn-ghost" id="marketPublicRefresh" type="button" title="Sincroniza fuentes públicas sin clave: INE-EMAT (Chile) y, si se habilitan, EA Hospitality Pulse y Apartments Zürich"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 21h16"/></svg><span>Sincronizar API pública</span></button>
             </div>
+            <article class="card" id="marketRealtimeCard">
+                <div class="card-head">
+                    <h3>Mercado en casi tiempo real · interno vs hoteleras externas</h3>
+                    <span class="badge" id="rtEstado">cargando…</span>
+                </div>
+                <div class="kpi-grid" id="rtKpis" aria-live="polite"></div>
+                <div class="ops-toolbar" style="margin-top:12px">
+                    <label for="rtVentana">Ventana</label>
+                    <select id="rtVentana" aria-label="Ventana del análisis en tiempo real">
+                        <option value="24h">Últimas 24 h</option>
+                        <option value="7d">Últimos 7 días</option>
+                        <option value="30d">Últimos 30 días</option>
+                    </select>
+                    <button class="btn btn-ghost" id="rtRefresh" type="button">Forzar lectura</button>
+                    <span class="ops-note" id="rtFrescura">—</span>
+                </div>
+                <div id="rtSenales" aria-live="polite" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px"></div>
+                <p class="ops-note" id="rtNota"></p>
+            </article>
             <div class="kpi-grid" id="marketKpis" aria-live="polite"></div>
             <article class="card">
                 <div class="card-head"><h3>Hotel vs mercado hotelero</h3><span class="badge">referencias públicas</span></div>
                 <canvas id="chartMarket" height="280"></canvas>
                 <p class="ops-note" id="marketNote"></p>
-                <p class="ops-note" id="marketPublicNote">Fuentes públicas sin clave: EA Hospitality Pulse (tarifas hoteleras publicadas, USD) y Apartments Zürich (precios de larga estancia, CHF), con conversión pública a la moneda seleccionada. La sincronización es manual y registra la atribución de cada dato.</p>
+                <p class="ops-note" id="marketPublicNote">Fuente pública por defecto: INE · EMAT de Chile (ocupación, ADR y RevPAR oficiales, con URL y período). Opcionalmente, con configuración explícita: EA Hospitality Pulse (África Oriental, USD) y Apartments Zürich (Suiza, CHF). La conversión usa tipo de cambio real y cada dato conserva su atribución.</p>
             </article>
             <div class="grid-2" style="margin-top:18px">
                 <article class="card">
@@ -768,7 +798,7 @@
                         <div class="dz-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M4 20h16"/></svg></div>
                         <p><b>Arrastra y suelta</b> tu archivo aquí</p>
                         <p class="dz-sub">o haz clic para seleccionarlo</p>
-                        <span class="dz-formats">CSV · TSV · XLSX · JSON · Máximo 10 MB y 20.000 filas</span>
+                        <span class="dz-formats">CSV · TSV · TXT · XLSX · JSON · Hasta 1 GB y 1.000.000 de filas (subida fragmentada)</span>
                     </div>
                 </div>
                 <div class="file-info" id="fileInfo" style="display:none">

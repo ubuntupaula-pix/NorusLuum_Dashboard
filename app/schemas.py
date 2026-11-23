@@ -8,6 +8,7 @@ from __future__ import annotations
 import re
 from datetime import datetime
 from typing import Optional, Literal
+from urllib.parse import urlsplit
 from pydantic import field_validator
 
 from pydantic import BaseModel, Field, ConfigDict
@@ -432,3 +433,33 @@ class MercadoReferenciaResponse(BaseModel):
     creado_por: str = ""
     creado_en: Optional[datetime] = None
     actualizado_en: Optional[datetime] = None
+
+
+# ============================================================
+# INTEGRACIÓN EMBEBIBLE (solo lectura)
+# ============================================================
+
+class EmbedTokenCreate(BaseModel):
+    parent_origin: str = Field(min_length=8, max_length=255, pattern=r"^https://[^/\s]+$")
+    propiedades: Optional[list[int]] = Field(default=None, max_length=100)
+    moneda: str = Field(default="CLP", pattern=r"^[A-Z]{3}$")
+    minutos: Optional[int] = Field(default=None, ge=1, le=10080)
+
+    @field_validator("parent_origin")
+    @classmethod
+    def normalizar_origen(cls, value):
+        clean = value.strip().rstrip("/")
+        parsed = urlsplit(clean)
+        if parsed.scheme != "https" or not parsed.netloc or parsed.path or parsed.query:
+            raise ValueError("parent_origin debe ser un origen HTTPS exacto, sin ruta.")
+        return clean
+
+
+class EmbedTokenResponse(BaseModel):
+    token: str
+    expires_en_minutos: int
+    parent_origin: str
+    propiedades: Optional[list[int]] = None
+    moneda: str
+    url: str
+    nota: str

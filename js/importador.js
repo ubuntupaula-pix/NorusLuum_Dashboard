@@ -36,8 +36,9 @@
   let filas = [];
   let columnas = [];
   let mapeo = {};
-  const MAX_BYTES = 512 * 1024 * 1024;
+  const MAX_BYTES = 1024 * 1024 * 1024;
   const MAX_ROWS = 1000000;
+  const MAX_COLUMNS = 200;
 
   function detectarMapeo(cols) {
     const result = {};
@@ -50,16 +51,44 @@
     return result;
   }
 
+  function parsearJson(texto) {
+    const limpio = texto.replace(/^\uFEFF/, '').trim();
+    if (!limpio) return [];
+    let datos;
+    try {
+      datos = JSON.parse(limpio);
+    } catch (err) {
+      // NDJSON: un objeto por línea.
+      const lineas = limpio.split(/\r?\n/).filter(linea => linea.trim());
+      if (!lineas.length) throw err;
+      datos = lineas.map(linea => JSON.parse(linea));
+    }
+    if (Array.isArray(datos)) return datos;
+    if (datos && typeof datos === 'object') {
+      for (const clave of ['data', 'rows', 'registros', 'filas', 'items']) {
+        if (Array.isArray(datos[clave])) return datos[clave];
+      }
+      return [datos];
+    }
+    throw new Error('El JSON no contiene registros.');
+  }
+
   async function leer(file) {
-    if (file.size > MAX_BYTES) throw new Error('El archivo supera el máximo de 512 MB.');
+    if (file.size > MAX_BYTES) throw new Error('El archivo supera el máximo de 1 GB.');
     const ext = file.name.split('.').pop().toLowerCase();
-    if (!['csv', 'tsv', 'xlsx', 'json'].includes(ext)) throw new Error('Usa CSV, TSV, XLSX o JSON.');
-    if (ext === 'csv' || ext === 'tsv') {
-      const text = await file.text();
-      const parsed = Papa.parse(text, { header: true, skipEmptyLines: 'greedy', transformHeader: h => h.trim(), delimiter: ext === 'tsv' ? '\t' : undefined });
+    if (!['csv', 'tsv', 'txt', 'xlsx', 'json'].includes(ext)) throw new Error('Usa CSV, TSV, XLSX o JSON.');
+    if (ext === 'csv' || ext === 'tsv' || ext === 'txt') {
+      const text = (await file.text()).replace(/^\uFEFF/, '');
+      const parsed = Papa.parse(text, {
+        header: true,
+        skipEmptyLines: 'greedy',
+        transformHeader: h => String(h || '').trim(),
+        delimiter: ext === 'tsv' ? '\t' : '',
+        delimitersToGuess: [',', ';', '\t', '|'],
+      });
       if (parsed.errors.some(e => e.type === 'Delimiter')) throw new Error('No se pudo detectar el separador del archivo.');
       filas = (parsed.data || []).filter(row => Object.values(row).some(v => String(v ?? '').trim() !== ''));
-      columnas = parsed.meta.fields || [];
+      columnas = (parsed.meta.fields || []).filter(Boolean);
     } else if (ext === 'xlsx') {
       const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true });
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
@@ -67,13 +96,14 @@
       filas = XLSX.utils.sheet_to_json(sheet, { defval: '' });
       columnas = filas.length ? Object.keys(filas[0]) : [];
     } else {
-      const raw = JSON.parse(await file.text());
-      const records = Array.isArray(raw) ? raw : (Array.isArray(raw?.data) ? raw.data : [raw]);
-      filas = records.filter(row => row && typeof row === 'object' && !Array.isArray(row));
-      columnas = filas.length ? Object.keys(filas[0]) : [];
+      const datos = parsearJson(await file.text());
+      filas = datos.filter(row => row && typeof row === 'object' && !Array.isArray(row));
+      columnas = [...new Set(filas.flatMap(row => Object.keys(row)))];
     }
     if (!filas.length || !columnas.length) throw new Error('El archivo no contiene filas tabulares con encabezados.');
-    if (columnas.length > 100 || filas.length > MAX_ROWS) throw new Error('Máximo permitido: 100 columnas y 1.000.000 de filas.');
+    if (columnas.length > MAX_COLUMNS || filas.length > MAX_ROWS) {
+      throw new Error('Máximo permitido: ' + MAX_COLUMNS + ' columnas y ' + MAX_ROWS.toLocaleString('es-CL') + ' filas.');
+    }
     archivo = file;
     mapeo = detectarMapeo(columnas);
     return { total: filas.length, columnas: columnas.slice(), mapeo: { ...mapeo } };

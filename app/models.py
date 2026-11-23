@@ -10,7 +10,7 @@ from datetime import datetime
 
 from sqlalchemy import (
     BigInteger, Column, Integer, String, Float, DateTime, Text, ForeignKey, Index,
-    UniqueConstraint, func,
+    LargeBinary, UniqueConstraint, func,
 )
 from sqlalchemy.orm import relationship
 
@@ -226,6 +226,40 @@ class CargaArchivo(Base):
     mensaje_error = Column(Text, default="")
     usuario = Column(String(100), default="")
     creado_en = Column(DateTime, default=func.now())
+
+
+class ImportacionSesion(Base):
+    """Sesión de subida fragmentada para archivos grandes."""
+
+    __tablename__ = "importacion_sesion"
+
+    id = Column(Integer, primary_key=True)
+    upload_id = Column(String(64), nullable=False)
+    nombre_archivo = Column(String(255), nullable=False)
+    formato = Column(String(20), nullable=False, default="")
+    mapeo = Column(Text, nullable=False, default="{}")
+    usuario = Column(String(100), nullable=False, default="")
+    tamano_bytes = Column(BigInteger, nullable=False, default=0)
+    total_chunks = Column(Integer, nullable=False, default=0)
+    sha256 = Column(String(64), nullable=False, default="")
+    estado = Column(String(20), nullable=False, default="abierta")
+    carga_id = Column(Integer, nullable=True)
+    mensaje = Column(Text, nullable=False, default="")
+    creado_en = Column(DateTime, nullable=False, default=func.now())
+    actualizado_en = Column(DateTime, nullable=False, default=func.now())
+
+
+class ImportacionChunk(Base):
+    """Fragmento de una subida. Se ensambla al finalizar la sesión."""
+
+    __tablename__ = "importacion_chunk"
+
+    id = Column(Integer, primary_key=True)
+    upload_id = Column(String(64), nullable=False, index=True)
+    indice = Column(Integer, nullable=False)
+    contenido = Column(LargeBinary, nullable=False)
+    creado_en = Column(DateTime, nullable=False, default=func.now())
+    __table_args__ = (UniqueConstraint("upload_id", "indice", name="uq_import_chunk_upload_indice"),)
 
 
 class EventoAuditoria(Base):
@@ -452,6 +486,27 @@ class ReferenciaMercado(Base):
     actualizado_en = Column(DateTime, nullable=False, default=func.now(), onupdate=func.now())
 
     marca = relationship("DimMarca", lazy="selectin")
+
+
+class MercadoSnapshot(Base):
+    """Último análisis de mercado válido, reutilizable entre instancias serverless.
+
+    Vercel ejecuta cada función en un proceso efímero: el caché en memoria no se
+    comparte entre invocaciones. Esta tabla conserva el último resultado bueno
+    por alcance para poder responder aunque una fuente externa falle y para
+    evitar llamadas redundantes a las APIs públicas.
+    """
+    __tablename__ = "mercado_snapshot"
+    __table_args__ = (
+        Index("ix_mercado_snapshot_actualizado", "actualizado_en"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    scope_key = Column(String(200), nullable=False, unique=True, index=True)
+    payload = Column(Text, nullable=False)
+    origen = Column(String(40), nullable=False, default="tiempo_real")
+    creado_en = Column(DateTime, nullable=False, default=func.now())
+    actualizado_en = Column(DateTime, nullable=False, default=func.now(), onupdate=func.now())
 
 
 class IntentoLogin(Base):

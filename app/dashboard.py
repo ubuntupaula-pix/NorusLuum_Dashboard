@@ -610,6 +610,7 @@ def obtener_dashboard(
         "habitaciones": {"labels": [r[0] for r in room_rows], "ingresos": [_num(r[1], 2) or 0 for r in room_rows]},
         "kpi": {"anio": kpi, "impor": kpi},
         "reservas": [{"id": r[0].id, "codigo": r[0].codigo, "huesped": r[0].huesped or "",
+                      "habitacion": r[0].habitacion or "",
                       "estado": r[0].estado or "", "valor": float(r[0].valor or 0), "moneda": r[0].moneda,
                       "noches": float(r[0].noches or 0), "anticipacion_dias": float(r[0].anticipacion_dias or 0),
                       "fecha": r[1], "canal": r[2], "nacionalidad": r[3], "marca": r[4],

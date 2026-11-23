@@ -2,11 +2,17 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "functions": {
     "api/index.py": {
-      "maxDuration": 60,
+      "maxDuration": 300,
       "memory": 1024,
       "excludeFiles": "{tests/**,.pytest_cache/**,**/__pycache__/**,**/*.py[co],data/demo/**,data/*.db,data/*.db-*,data/*.db.*,data/*.sqlite*,.env,.env.*,.vercel/**,.venv/**,venv/**}"
     }
   },
+  "crons": [
+    {
+      "path": "/api/cron/mercado-diario",
+      "schedule": "0 3 * * *"
+    }
+  ],
   "routes": [
     {
       "src": "/(.*)",

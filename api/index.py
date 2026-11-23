@@ -29,6 +29,11 @@ if str(ROOT) not in sys.path:
 # Con PostgreSQL gestionado (Neon, Supabase, RDS…) basta con DATABASE_URL.
 # Sin ella usamos SQLite: el archivo se empaqueta en data/ y se copia a /tmp
 # porque el resto del sistema de archivos es de solo lectura.
+if os.environ.get("NORUS_ENV", "development").lower() == "production" and not os.environ.get("DATABASE_URL", "").strip():
+    raise RuntimeError(
+        "DATABASE_URL es obligatoria en Vercel: SQLite en /tmp es efímera y no se comparte entre funciones."
+    )
+
 if not os.environ.get("DATABASE_URL", "").strip():
     destino = Path(os.environ.get("NORUS_DB_PATH", "/tmp/norusluum.db"))
     origen = ROOT / "data" / "norusluum.db"

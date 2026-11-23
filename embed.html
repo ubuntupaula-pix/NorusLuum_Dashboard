@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Norus · Inteligencia de mercado en tiempo real</title>
+  <link rel="stylesheet" href="/css/embed.css">
+</head>
+<body>
+  <main class="norus-widget" id="norus-widget" aria-busy="true">
+    <header class="norus-head">
+      <div>
+        <p class="norus-eyebrow">NORUS &amp; LUUM · INTELIGENCIA COMERCIAL</p>
+        <h1>Mercado en tiempo real</h1>
+      </div>
+      <div class="norus-status" id="norusStatus" role="status">Conectando…</div>
+    </header>
+
+    <p class="norus-updated" id="norusUpdated">Esperando credenciales de la aplicación padre…</p>
+
+    <section class="norus-kpis" id="norusKpis" aria-live="polite"></section>
+
+    <section class="norus-card">
+      <div class="norus-card-head">
+        <h2>Hotel vs mercado</h2>
+        <span id="norusMoneda">—</span>
+      </div>
+      <div class="norus-chart-wrap"><canvas id="norusChart" height="240"></canvas></div>
+    </section>
+
+    <section class="norus-card">
+      <div class="norus-card-head"><h2>Señales accionables</h2></div>
+      <ul class="norus-signals" id="norusSignals"><li class="norus-muted">Sin datos todavía.</li></ul>
+    </section>
+
+    <footer class="norus-foot" id="norusNote"></footer>
+  </main>
+
+  <script src="/vendor/chart.umd.min.js"></script>
+  <script src="/js/embed.js"></script>
+</body>
+</html>

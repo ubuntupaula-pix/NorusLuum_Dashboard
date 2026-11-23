@@ -19,20 +19,37 @@
   // ---------- Estado ----------
   const PAG = 8;
   let pagina = 1;
-  let todasLasReservas = [];
+  let reservasPagina = [];
+  let totalReservas = 0;
+  let canalesDisponibles = [];
+  let modoLocal = false;
+  let secuenciaCarga = 0;
 
-  // ---------- Cargar reservas del servidor ----------
+  // ---------- Cargar reservas del servidor (paginación real) ----------
   async function cargarReservas() {
+    const id = ++secuenciaCarga;
     try {
+      const f = getFiltros();
+      const propiedad = $('#propiedad') ? $('#propiedad').value : '';
       const skip = (pagina - 1) * PAG;
-      const datos = await window.API.listarReservas(skip, PAG * 3, '', '');
-      todasLasReservas = datos;
+      const datos = await window.API.listarReservas(skip, PAG, f.q, f.canal, propiedad, true);
+      if (id !== secuenciaCarga) return; //descarta respuestas obsoletas
+      reservasPagina = Array.isArray(datos.items) ? datos.items : [];
+      totalReservas = Number(datos.total) || 0;
+      canalesDisponibles = Array.isArray(datos.canales) ? datos.canales : [];
+      modoLocal = false;
+      const totalPag = Math.max(1, Math.ceil(totalReservas / PAG));
+      if (pagina > totalPag) { pagina = totalPag; await cargarReservas(); return; }
+      refillCanales();
       render();
     } catch (err) {
+      if (id !== secuenciaCarga) return;
       console.warn('Error cargando reservas:', err);
-      // Fallback a datos locales
+      // Fallback solo si el servidor no responde: se pagina el dataset local.
       if (typeof Datos !== 'undefined' && Datos.reservas) {
-        todasLasReservas = Datos.reservas;
+        modoLocal = true;
+        canalesDisponibles = [...new Set(Datos.reservas.map(r => r.canal).filter(Boolean))].sort();
+        refillCanales();
         render();
       }
     }
@@ -46,24 +63,23 @@
   }
 
   function registrosFiltrados() {
+    if (!modoLocal) return reservasPagina; //el servidor ya aplicó filtros y paginación
     const { q, canal } = getFiltros();
-    const lista = todasLasReservas.filter(r => {
+    return (Datos.reservas || []).filter(r => {
       const texto = [r.codigo, r.huesped, r.habitacion, r.nacionalidad, r.canal, r.estado, r.fecha].join(' ').toLowerCase();
       const okQ = !q || texto.includes(q);
       const okC = !canal || (r.canal || '') === canal;
       return okQ && okC;
     });
-    return lista;
   }
 
   // ---------- Rellenar filtro de canal ----------
   function refillCanales() {
     const sel = $('#crudFiltroCanal');
     const actual = sel.value;
-    const canales = new Set(todasLasReservas.map(r => r.canal).filter(Boolean));
     sel.innerHTML = '<option value="">Todos los canales</option>' +
-      [...canales].map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
-    if (actual) sel.value = actual;
+      canalesDisponibles.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+    if (actual && canalesDisponibles.includes(actual)) sel.value = actual;
   }
 
   // ---------- Formateo ----------
@@ -98,10 +114,10 @@
   // ---------- Render tabla ----------
   function render() {
     const lista = registrosFiltrados();
-    const total = lista.length;
+    const total = modoLocal ? lista.length : totalReservas;
     const totalPag = Math.max(1, Math.ceil(total / PAG));
     if (pagina > totalPag) pagina = totalPag;
-    const slice = lista.slice((pagina - 1) * PAG, pagina * PAG);
+    const slice = modoLocal ? lista.slice((pagina - 1) * PAG, pagina * PAG) : lista;
 
     $('#crudCountText').textContent =
       Datos._importado
@@ -218,6 +234,7 @@
         await window.API.crearReserva(registro);
         notificar('Reserva creada: ' + registro.codigo, 'success');
         auditoria('reserva_crear', 'Nueva reserva ' + registro.codigo + ' · ' + registro.huesped);
+        pagina = 1; //la reserva nueva se ordena primero en el servidor
       }
       cerrarForm();
       await cargarReservas();
@@ -228,7 +245,7 @@
 
   // ---------- Eliminar ----------
   async function eliminar(id) {
-    const r = todasLasReservas.find(x => x.id === id);
+    const r = reservasPagina.find(x => x.id === id);
     const nombre = r ? (r.codigo + ' · ' + r.huesped) : ('#' + id);
     if (!confirm('¿Eliminar la reserva ' + nombre + '?')) return;
     try {
@@ -250,14 +267,23 @@
     $('#crudModalOverlay').addEventListener('click', (e) => { if (e.target === $('#crudModalOverlay')) cerrarForm(); });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape') cerrarForm(); });
 
-    $('#crudBuscar').addEventListener('input', () => { pagina = 1; render(); });
-    $('#crudFiltroCanal').addEventListener('change', () => { pagina = 1; render(); });
+    let temporizadorBusqueda;
+    function recargarDesdeInicio() {
+      pagina = 1;
+      if (modoLocal) render();
+      else cargarReservas();
+    }
+    $('#crudBuscar').addEventListener('input', () => {
+      clearTimeout(temporizadorBusqueda);
+      temporizadorBusqueda = setTimeout(recargarDesdeInicio, 250);
+    });
+    $('#crudFiltroCanal').addEventListener('change', recargarDesdeInicio);
 
     $('#crudBody').addEventListener('click', (e) => {
       const ed = e.target.closest('.edit');
       const del = e.target.closest('.del');
       if (ed) {
-        const r = todasLasReservas.find(x => x.id === Number(ed.dataset.id));
+        const r = reservasPagina.find(x => x.id === Number(ed.dataset.id));
         if (r) abrirForm(r);
       } else if (del) {
         eliminar(Number(del.dataset.id));
@@ -265,10 +291,13 @@
     });
     $('#crudPagination').addEventListener('click', (e) => {
       const pg = e.target.closest('.pg');
-      if (pg && !pg.disabled) { pagina = Number(pg.dataset.pg); render(); }
+      if (pg && !pg.disabled) {
+        pagina = Number(pg.dataset.pg);
+        if (modoLocal) render();
+        else cargarReservas();
+      }
     });
 
-    refillCanales();
     cargarReservas();
   }
 

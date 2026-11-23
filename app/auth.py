@@ -49,6 +49,10 @@ JWT_ISSUER = os.environ.get("NORUS_JWT_ISSUER", "norus-intelligence")
 JWT_AUDIENCE = os.environ.get("NORUS_JWT_AUDIENCE", "norus-dashboard")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.environ.get("NORUS_TOKEN_EXPIRY", "480"))
 MFA_TOKEN_EXPIRE_MINUTES = 5
+# Tokens de solo lectura para incrustar el panel en otra aplicación web.
+EMBED_TOKEN_EXPIRE_MINUTES = max(
+    1, min(int(os.environ.get("NORUS_EMBED_TOKEN_EXPIRY", "1440")), 10080)
+)
 SESSION_COOKIE = "norus_session"
 CSRF_COOKIE = "norus_csrf"
 CSRF_HEADER = "X-CSRF-Token"
@@ -154,6 +158,39 @@ def create_mfa_token(username: str, token_version: int) -> str:
     }
     payload.update(_base_claims("mfa"))
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def embed_allowed_origins() -> list[str]:
+    """Orígenes autorizados a incrustar el panel (lista blanca exacta)."""
+    return [
+        value.strip().rstrip("/")
+        for value in os.environ.get("NORUS_EMBED_ALLOWED_ORIGINS", "").split(",")
+        if value.strip()
+    ]
+
+
+def create_embed_token(
+    propiedades: list[int] | None,
+    moneda: str,
+    parent_origin: str,
+    minutos: int | None = None,
+) -> tuple[str, int]:
+    """Emite un JWT de solo lectura para el widget embebible.
+
+    El token viaja en el fragmento de la URL (``#token=...``), nunca en la
+    consulta: así no aparece en logs del servidor, proxies ni historial.
+    """
+    ttl = min(max(int(minutos or EMBED_TOKEN_EXPIRE_MINUTES), 1), EMBED_TOKEN_EXPIRE_MINUTES)
+    payload = {
+        "sub": "embed",
+        "ver": 0,
+        "propiedades": sorted({int(p) for p in propiedades}) if propiedades is not None else None,
+        "moneda": moneda,
+        "parent": parent_origin.rstrip("/"),
+        "exp": datetime.now(UTC) + timedelta(minutes=ttl),
+    }
+    payload.update(_base_claims("embed"))
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM), ttl
 
 
 def decode_token(token: str, expected_scope: str | None = "access") -> dict | None:

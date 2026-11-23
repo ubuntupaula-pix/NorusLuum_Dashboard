@@ -10,6 +10,45 @@
   // records a non-secret UI hint and is never sent to the server.
   let sessionHint = sessionStorage.getItem('norus_session_active') === '1';
 
+  // ------------------------------------------------------------------
+  // Stale-while-revalidate local cache.
+  // Se guarda solo en sessionStorage (por pestaña y usuario) para que la
+  // interfaz pueda pintar el último estado válido ANTES de que lleguen las
+  // respuestas del servidor. Nunca sustituye a la revalidación: los datos
+  // cacheados se marcan como "actualizando…" y se sobrescriben al responder.
+  // ------------------------------------------------------------------
+  const CACHE_PREFIX = 'norus_swr_v1:';
+  const NorusCache = {
+    key() {
+      return CACHE_PREFIX + Array.from(arguments).map(v => String(v == null ? '' : v)).join('|');
+    },
+    get(key) {
+      try {
+        const raw = sessionStorage.getItem(key);
+        if (!raw) return null;
+        const entry = JSON.parse(raw);
+        return entry && entry.value !== undefined ? entry.value : null;
+      } catch (_) {
+        return null;
+      }
+    },
+    set(key, value) {
+      try {
+        sessionStorage.setItem(key, JSON.stringify({ savedAt: Date.now(), value }));
+      } catch (_) {
+        /* almacenamiento lleno o deshabilitado: la app sigue funcionando */
+      }
+    },
+    clearAll() {
+      try {
+        Object.keys(sessionStorage)
+          .filter(k => k.indexOf(CACHE_PREFIX) === 0)
+          .forEach(k => sessionStorage.removeItem(k));
+      } catch (_) { /* no-op */ }
+    }
+  };
+  window.NorusCache = NorusCache;
+
   function setToken(t) {
     sessionHint = Boolean(t);
     if (sessionHint) sessionStorage.setItem('norus_session_active', '1');
@@ -26,6 +65,7 @@
     sessionStorage.removeItem('norus_user');
     sessionStorage.removeItem('norus_role');
     sessionStorage.removeItem('norus_props');
+    NorusCache.clearAll();
   }
 
   function redirectToLogin() {
@@ -85,6 +125,41 @@
       throw error;
     }
     return data;
+  }
+
+  async function sha256Hex(buffer) {
+    if (!window.crypto || !window.crypto.subtle) {
+      throw new Error('Se requiere HTTPS (o localhost) para verificar la integridad del archivo.');
+    }
+    const digest = await window.crypto.subtle.digest('SHA-256', buffer);
+    return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  async function importarArchivo(file, mapping, onProgress) {
+    const limits = await request('GET', '/importar/config');
+    if (file.size > limits.max_bytes) {
+      throw new Error('El archivo supera el máximo de ' + Math.round(limits.max_bytes / 1024 / 1024) + ' MB.');
+    }
+    if (file.size <= limits.chunk_bytes) {
+      return upload('/importar', file, { mapeo: mapping || {} });
+    }
+    const sha256 = await sha256Hex(await file.arrayBuffer());
+    const total = Math.ceil(file.size / limits.chunk_bytes);
+    const session = await request('POST', '/importar/sesiones', {
+      nombre_archivo: file.name,
+      tamano_bytes: file.size,
+      total_chunks: total,
+      sha256,
+      mapeo: mapping || {},
+    });
+    const id = encodeURIComponent(session.upload_id);
+    for (let i = 0; i < total; i += 1) {
+      const inicio = i * limits.chunk_bytes;
+      const fin = Math.min(inicio + limits.chunk_bytes, file.size);
+      await upload('/importar/sesiones/' + id + '/chunks/' + i, file.slice(inicio, fin));
+      if (typeof onProgress === 'function') onProgress(i + 1, total);
+    }
+    return request('POST', '/importar/sesiones/' + id + '/finalizar');
   }
 
   function query(params) {
@@ -153,16 +228,29 @@
     marketPublicRefresh: (params) =>
       request('POST', '/mercado/publico/actualizar' + query(params || {})),
     marketComparison: (params) => request('GET', '/mercado/comparacion' + query(params || {})),
+    // Inteligencia casi en tiempo real: interno + hoteleras externas.
+    marketRealtime: (params) => request('GET', '/mercado/tiempo-real' + query(params || {})),
+
+    // Datos de demostración (siempre visibles mientras estén activos)
+    demoEstado: () => request('GET', '/demo/estado'),
+    demoCargar: (payload) => request('POST', '/demo/cargar', payload || {}),
+    demoBorrar: () => request('DELETE', '/demo'),
+
+    // Integración como sección de otra web (tokens de solo lectura)
+    embedConfig: () => request('GET', '/embed/config'),
+    embedToken: (payload) => request('POST', '/embed/token', payload),
 
     // Reservas CRUD
-    listarReservas: (skip, limit, busqueda, canal, propiedadId) =>
-      request('GET', '/reservas' + query({ skip, limit, busqueda, canal, propiedad_id: propiedadId })),
+    listarReservas: (skip, limit, busqueda, canal, propiedadId, conTotal) =>
+      request('GET', '/reservas' + query({ skip, limit, busqueda, canal, propiedad_id: propiedadId, con_total: conTotal })),
     crearReserva: (data) => request('POST', '/reservas', data),
     actualizarReserva: (id, data) => request('PUT', '/reservas/' + id, data),
     eliminarReserva: (id) => request('DELETE', '/reservas/' + id),
 
-    // Importación ETL
-    importar: (file, mapping) => upload('/importar', file, { mapeo: mapping || {} }),
+    // Importación ETL (fragmentada automáticamente para archivos grandes)
+    importar: importarArchivo,
+    importarConfig: () => request('GET', '/importar/config'),
+    cancelarImportacion: (uploadId) => request('DELETE', '/importar/sesiones/' + encodeURIComponent(uploadId)),
     listarCargas: (skip, limit) => request('GET', '/cargas' + query({ skip, limit })),
 
     // Auditoría
