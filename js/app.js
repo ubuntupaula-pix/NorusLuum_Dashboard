@@ -53,18 +53,15 @@
   });
 
   // ---------- Permisos de interfaz por rol ----------
-  // El lector trabaja únicamente en la vista Base, en modo consulta. El editor
-  // puede editar pero no administrar usuarios ni eliminar reservas. El admin
-  // conserva todas las vistas. La comprobación también se hace en la API.
+  // Todos los roles ven el dashboard completo. Los privilegios cambian:
+  // lector = solo consulta, editor = consulta + edición, admin = todo.
+  // La API vuelve a comprobar cada operación.
   function applyRoleRestrictions(role) {
     const lector = role === 'lector';
-    $$('.nav-item').forEach(btn => {
-      const view = btn.dataset.view;
-      if (lector) btn.hidden = view !== 'base';
-      else if (view === 'auditoria' || view === 'seguridad') btn.hidden = role !== 'admin';
-      else btn.hidden = false;
-    });
+    // Ninguna vista se oculta: la información es común a los tres roles.
+    $$('.nav-item').forEach(btn => { btn.hidden = false; });
     if (lector) {
+      // El lector no tiene acciones de importación ni de alta de reservas.
       ['btnUpload', 'btnNuevo', 'dataAlertUpload'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.hidden = true;
@@ -94,12 +91,6 @@
     if (avatarEl) {
       avatarEl.textContent = authUser.toUpperCase().slice(0, 2);
       avatarEl.title = authUser + ' (' + authRole + ')';
-    }
-
-    if (authRole === 'lector') {
-      navegar('base');
-      const subtitulo = $('#viewSubtitle');
-      if (subtitulo) subtitulo.textContent = 'Consulta de registros · acceso de solo lectura';
     }
 
     document.body.classList.remove('auth-pending');
@@ -169,13 +160,13 @@
   };
 
   function navegar(view) {
-    // Defensa en profundidad: el lector no puede salir de la vista Base, ni
-    // aunque dispare la navegación desde un KPI o desde otro módulo.
-    if (authRole === 'lector' && view !== 'base') return;
     $$('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.view === view));
     $$('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + view));
     $('#viewTitle').textContent = titulos[view][0];
-    $('#viewSubtitle').textContent = titulos[view][1];
+    let subtitulo = titulos[view][1];
+    if (view === 'base' && authRole === 'lector') subtitulo = 'Consulta de registros · acceso de solo lectura';
+    if (view === 'base' && authRole === 'editor') subtitulo = 'Consulta y edición de registros · sin eliminación';
+    $('#viewSubtitle').textContent = subtitulo;
     $('#sidebar').classList.remove('open');
     if (view === 'base' && window.onCrudRefresh) window.onCrudRefresh();
     if (view === 'auditoria') renderAuditoria();

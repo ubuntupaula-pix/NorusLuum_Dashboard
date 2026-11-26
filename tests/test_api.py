@@ -469,6 +469,11 @@ def test_lector_ve_base_en_solo_lectura(client):
     assert sin_pii.status_code == 200
     assert sin_pii.json() == []
 
+    # Ve el dashboard completo en modo consulta, incluida la auditoría.
+    assert client.get("/api/auditoria").status_code == 200
+    assert client.get("/api/dashboard", params={"propiedad_id": pid}).status_code == 200
+    assert client.get("/api/usuarios").status_code == 403
+
     denegada = post(client, "/api/reservas", json={
         "codigo": "BASE-LECTOR-002", "huesped": "Intruso", "propiedad_id": pid,
     })

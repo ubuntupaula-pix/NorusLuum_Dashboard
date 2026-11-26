@@ -20,7 +20,7 @@ Dashboard web hotelero comercial y operativo. Incluye backend API (FastAPI), int
   - **SSO OIDC** opcional (Authorization Code + PKCE), sin alta automática de cuentas.
   - **Cifrado de datos en reposo** para PII (huésped y códigos de respaldo) con Fernet y rotación de claves.
   - **Permisos por propiedad** (`usuario_propiedad`): un usuario sin propiedades asignadas no accede a datos; administradores y cuentas con acceso global ven todo.
-  - **Roles:** `lector` solo consulta (PII oculta y sin escrituras), `editor` consulta y edita reservas/operación/importación, `admin` además gestiona usuarios, propiedades, auditoría, demo y eliminación de reservas.
+  - **Roles:** los tres roles ven el dashboard completo. `lector` solo consulta (PII oculta y sin escrituras), `editor` consulta y edita reservas/operación/importación, y `admin` además gestiona usuarios, propiedades, demo y eliminación de reservas. La auditoría es consultable por los tres roles.
   - Cabeceras CSP, HSTS en producción, control de origen, CORS cerrado y `/metrics` protegido.
 - **Despliegue:** Docker Compose, migraciones Alembic, contenedores sin root, Caddy con HTTPS automático y respaldo diario de PostgreSQL.
 
@@ -218,7 +218,7 @@ El proyecto incluye el adaptador `api/index.py`, `vercel.json` (función Python 
 - `POST /api/importar`, `GET /api/cargas`
 - `GET/POST/PATCH /api/operaciones/{tareas|incidencias|mantenimiento|inventario|objetos-perdidos|checklists}`
 - `GET/POST/PATCH /api/usuarios` y `POST /api/usuarios/{id}/reset-password` (solo administradores)
-- `GET /api/auditoria` (administrador), `GET /api/health`
+- `GET /api/auditoria` (todos los roles, solo lectura), `GET /api/health`
 - OpenAPI en `/api/docs` solo en desarrollo; deshabilitado en producción.
 
 ## Antes de usar datos productivos

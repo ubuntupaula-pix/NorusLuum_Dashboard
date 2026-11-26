@@ -1307,8 +1307,9 @@ def listar_auditoria(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
     db: Session = Depends(get_db),
-    _: Usuario = Depends(require_admin),
+    _: Usuario = Depends(get_current_user),
 ):
+    """Consulta de eventos: visible para todos los roles, solo lectura."""
     return db.query(EventoAuditoria).order_by(EventoAuditoria.id.desc()).offset(skip).limit(limit).all()
 
 
