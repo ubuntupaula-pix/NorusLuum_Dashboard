@@ -32,7 +32,7 @@
       const f = getFiltros();
       const propiedad = $('#propiedad') ? $('#propiedad').value : '';
       const skip = (pagina - 1) * PAG;
-      const datos = await window.API.listarReservas(skip, PAG, f.q, f.canal, propiedad, true);
+      const datos = await window.API.listarReservas(skip, PAG, f.q, f.canal, propiedad, f.habitacion, true);
       if (id !== secuenciaCarga) return; //descarta respuestas obsoletas
       reservasPagina = Array.isArray(datos.items) ? datos.items : [];
       totalReservas = Number(datos.total) || 0;
@@ -59,17 +59,19 @@
   function getFiltros() {
     const q = ($('#crudBuscar').value || '').toLowerCase();
     const canal = $('#crudFiltroCanal').value;
-    return { q, canal };
+    const habitacion = ($('#crudBuscarHabitacion').value || '').trim().toLowerCase();
+    return { q, canal, habitacion };
   }
 
   function registrosFiltrados() {
     if (!modoLocal) return reservasPagina; //el servidor ya aplicó filtros y paginación
-    const { q, canal } = getFiltros();
+    const { q, canal, habitacion } = getFiltros();
     return (Datos.reservas || []).filter(r => {
       const texto = [r.codigo, r.huesped, r.habitacion, r.nacionalidad, r.canal, r.estado, r.fecha].join(' ').toLowerCase();
       const okQ = !q || texto.includes(q);
       const okC = !canal || (r.canal || '') === canal;
-      return okQ && okC;
+      const okH = !habitacion || String(r.habitacion || '').toLowerCase().includes(habitacion);
+      return okQ && okC && okH;
     });
   }
 
@@ -273,9 +275,12 @@
       if (modoLocal) render();
       else cargarReservas();
     }
-    $('#crudBuscar').addEventListener('input', () => {
-      clearTimeout(temporizadorBusqueda);
-      temporizadorBusqueda = setTimeout(recargarDesdeInicio, 250);
+    ['#crudBuscar', '#crudBuscarHabitacion'].forEach(selector => {
+      const input = $(selector);
+      if (input) input.addEventListener('input', () => {
+        clearTimeout(temporizadorBusqueda);
+        temporizadorBusqueda = setTimeout(recargarDesdeInicio, 250);
+      });
     });
     $('#crudFiltroCanal').addEventListener('change', recargarDesdeInicio);
 

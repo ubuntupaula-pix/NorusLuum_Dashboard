@@ -241,8 +241,8 @@
     embedToken: (payload) => request('POST', '/embed/token', payload),
 
     // Reservas CRUD
-    listarReservas: (skip, limit, busqueda, canal, propiedadId, conTotal) =>
-      request('GET', '/reservas' + query({ skip, limit, busqueda, canal, propiedad_id: propiedadId, con_total: conTotal })),
+    listarReservas: (skip, limit, busqueda, canal, propiedadId, habitacion, conTotal) =>
+      request('GET', '/reservas' + query({ skip, limit, busqueda, canal, propiedad_id: propiedadId, habitacion, con_total: conTotal })),
     crearReserva: (data) => request('POST', '/reservas', data),
     actualizarReserva: (id, data) => request('PUT', '/reservas/' + id, data),
     eliminarReserva: (id) => request('DELETE', '/reservas/' + id),

@@ -873,6 +873,7 @@ def listar_reservas(
     limit: int = Query(50, ge=1, le=500),
     busqueda: str = Query("", max_length=100),
     canal: str = Query("", max_length=100),
+    habitacion: str = Query("", max_length=30, description="Filtro por número de habitación (contiene)."),
     propiedad_id: int | None = Query(None, ge=1),
     con_total: bool = Query(False, description="Devuelve {items, total, canales} para paginación en servidor."),
     db: Session = Depends(get_db),
@@ -892,6 +893,8 @@ def listar_reservas(
         query = query.filter(HechoReserva.marca_id == propiedad_id)
     if canal:
         query = query.filter(DimCanal.nombre == canal)
+    if habitacion:
+        query = query.filter(HechoReserva.habitacion.contains(habitacion, autoescape=True))
     # Los canales y el total se calculan sobre el alcance del usuario, antes de
     # paginar. Así la paginación del CRUD es real y el filtro no se queda con
     # los canales de la página cargada.
