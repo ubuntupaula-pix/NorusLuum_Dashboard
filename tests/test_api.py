@@ -431,6 +431,52 @@ def test_permisos_por_propiedad(client):
     assert client.get("/api/usuarios").status_code == 403
 
 
+def test_lector_ve_base_en_solo_lectura(client):
+    """El lector consulta la Base, sin PII y sin poder escribir."""
+    pid = _nuevo_brand("Base Lector", 26)
+    login(client)
+    creada = post(client, "/api/reservas", json={
+        "codigo": "BASE-LECTOR-001",
+        "huesped": "Huésped Confidencial",
+        "habitacion": "707",
+        "valor": 900,
+        "moneda": "CLP",
+        "propiedad_id": pid,
+    })
+    assert creada.status_code == 200, creada.text
+    assert post(client, "/api/usuarios", json={
+        "username": "base_lector",
+        "password": "Base-Lector-2026!x",
+        "rol": "lector",
+        "propiedades": [pid],
+        "acceso_todas_propiedades": False,
+    }).status_code == 200
+
+    client.cookies.clear()
+    login(client, "base_lector", "Base-Lector-2026!x")
+
+    page = client.get("/api/reservas", params={
+        "habitacion": "707", "skip": 0, "limit": 5, "con_total": "true",
+    })
+    assert page.status_code == 200, page.text
+    data = page.json()
+    assert data["total"] == 1
+    assert data["items"][0]["habitacion"] == "707"
+    assert data["items"][0]["huesped"] == ""
+
+    # La búsqueda general no permite inferir el nombre del huésped.
+    sin_pii = client.get("/api/reservas", params={"busqueda": "Confidencial"})
+    assert sin_pii.status_code == 200
+    assert sin_pii.json() == []
+
+    denegada = post(client, "/api/reservas", json={
+        "codigo": "BASE-LECTOR-002", "huesped": "Intruso", "propiedad_id": pid,
+    })
+    assert denegada.status_code == 403
+    assert put(client, f"/api/reservas/{creada.json()['id']}", json={"valor": 1}).status_code == 403
+    assert delete(client, f"/api/reservas/{creada.json()['id']}").status_code == 403
+
+
 def test_usuario_sin_propiedades_no_ve_datos(client):
     login(client)
     response = post(client, "/api/usuarios", json={

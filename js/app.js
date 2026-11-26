@@ -52,6 +52,29 @@
     window.location.href = 'login.html';
   });
 
+  // ---------- Permisos de interfaz por rol ----------
+  // El lector trabaja únicamente en la vista Base, en modo consulta. El editor
+  // puede editar pero no administrar usuarios ni eliminar reservas. El admin
+  // conserva todas las vistas. La comprobación también se hace en la API.
+  function applyRoleRestrictions(role) {
+    const lector = role === 'lector';
+    $$('.nav-item').forEach(btn => {
+      const view = btn.dataset.view;
+      if (lector) btn.hidden = view !== 'base';
+      else if (view === 'auditoria' || view === 'seguridad') btn.hidden = role !== 'admin';
+      else btn.hidden = false;
+    });
+    if (lector) {
+      ['btnUpload', 'btnNuevo', 'dataAlertUpload'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.hidden = true;
+      });
+    }
+    if (window.onCrudPermissions) window.onCrudPermissions(role);
+  }
+  // Aplica también al snapshot de sessionStorage, antes de que llegue /auth/me.
+  applyRoleRestrictions(authRole);
+
   function applyAuth(me) {
     authMe = me;
     authUser = me.username || 'usuario';
@@ -65,6 +88,7 @@
     if (window.Mercado && typeof window.Mercado.refreshPermissions === 'function') {
       window.Mercado.refreshPermissions(authRole);
     }
+    applyRoleRestrictions(authRole);
 
     const avatarEl = document.querySelector('.avatar');
     if (avatarEl) {
@@ -72,14 +96,10 @@
       avatarEl.title = authUser + ' (' + authRole + ')';
     }
 
-    if (authRole !== 'admin') {
-      const auditNav = document.querySelector('[data-view="auditoria"]');
-      if (auditNav) auditNav.hidden = true;
-    }
     if (authRole === 'lector') {
-      ['btnUpload', 'btnNuevo', 'dataAlertUpload'].forEach(id => { const el = document.getElementById(id); if (el) el.hidden = true; });
-      const reservationNav = document.querySelector('[data-view="base"]');
-      if (reservationNav) reservationNav.hidden = true;
+      navegar('base');
+      const subtitulo = $('#viewSubtitle');
+      if (subtitulo) subtitulo.textContent = 'Consulta de registros · acceso de solo lectura';
     }
 
     document.body.classList.remove('auth-pending');
@@ -149,6 +169,9 @@
   };
 
   function navegar(view) {
+    // Defensa en profundidad: el lector no puede salir de la vista Base, ni
+    // aunque dispare la navegación desde un KPI o desde otro módulo.
+    if (authRole === 'lector' && view !== 'base') return;
     $$('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.view === view));
     $$('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + view));
     $('#viewTitle').textContent = titulos[view][0];

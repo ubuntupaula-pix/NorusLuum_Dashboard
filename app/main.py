@@ -877,9 +877,14 @@ def listar_reservas(
     propiedad_id: int | None = Query(None, ge=1),
     con_total: bool = Query(False, description="Devuelve {items, total, canales} para paginación en servidor."),
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_editor),
+    current_user: Usuario = Depends(get_current_user),
 ):
-    """Lista reservas con paginación, filtros y alcance por propiedad."""
+    """Lista reservas con paginación, filtros y alcance por propiedad.
+
+    La consulta es de solo lectura: lectores, editores y administradores pueden
+    verla dentro de su alcance. Las escrituras siguen exigiendo `require_editor`
+    (y la eliminación, `require_admin`).
+    """
     from .models import DimCanal, DimFecha, DimMarca, DimNacionalidad, DimSegmento, DimTipoHabitacion
 
     query = db.query(HechoReserva).outerjoin(DimFecha).outerjoin(DimCanal).outerjoin(
@@ -914,14 +919,21 @@ def listar_reservas(
         # El nombre del huésped está cifrado en reposo: hay que filtrar en memoria.
         tope = 20000 if con_total else max(limit * 20, 1000)
         needle = busqueda.casefold()
+        # Un lector nunca puede usar la búsqueda general para inferir PII.
+        buscar_huesped = current_user.rol != "lector"
         matches = [
             r for r in query.limit(tope).all()
-            if needle in (r.codigo or "").casefold() or needle in (r.huesped or "").casefold()
+            if needle in (r.codigo or "").casefold()
+            or (buscar_huesped and needle in (r.huesped or "").casefold())
         ]
         total = len(matches) if con_total else None
         filas = matches[skip:skip + limit]
 
     items = [_reserva_to_response(r) for r in filas]
+    if current_user.rol == "lector":
+        # Coherente con /api/dashboard: el lector ve la base, pero sin PII.
+        for item in items:
+            item["huesped"] = ""
     if con_total:
         return {"items": items, "total": total, "canales": canales}
     return items

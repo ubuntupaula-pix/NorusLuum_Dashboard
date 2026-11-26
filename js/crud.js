@@ -25,6 +25,26 @@
   let modoLocal = false;
   let secuenciaCarga = 0;
 
+  // ---------- Permisos (la API es la autoridad final) ----------
+  function rolActual() {
+    return window.__norusRole || sessionStorage.getItem('norus_role') || '';
+  }
+  let puedeEditar = ['admin', 'editor'].includes(rolActual());
+  let puedeBorrar = rolActual() === 'admin';
+
+  function aplicarPermisos(rol) {
+    const role = rol || rolActual();
+    puedeEditar = ['admin', 'editor'].includes(role);
+    puedeBorrar = role === 'admin';
+    const nuevo = $('#btnNuevo');
+    if (nuevo) {
+      nuevo.hidden = !puedeEditar;
+      nuevo.disabled = !puedeEditar;
+    }
+    render();
+  }
+  window.onCrudPermissions = aplicarPermisos;
+
   // ---------- Cargar reservas del servidor (paginación real) ----------
   async function cargarReservas() {
     const id = ++secuenciaCarga;
@@ -135,7 +155,14 @@
     }
     $('#crudEmpty').style.display = 'none';
 
-    body.innerHTML = slice.map(r => `
+    const iconoEditar = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4l10-10-4-4L4 16v4z"/><path d="M13.5 6.5l4 4"/></svg>';
+    const iconoEliminar = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16"/><path d="M9 7V5h6v2"/><path d="M6 7l1 13h10l1-13"/><path d="M10 11v6M14 11v6"/></svg>';
+    body.innerHTML = slice.map(r => {
+      let acciones = '';
+      if (puedeEditar) acciones += `<button class="mini-btn edit" data-id="${r.id}" title="Editar" aria-label="Editar reserva">${iconoEditar}</button>`;
+      if (puedeBorrar) acciones += `<button class="mini-btn del" data-id="${r.id}" title="Eliminar" aria-label="Eliminar reserva">${iconoEliminar}</button>`;
+      if (!acciones) acciones = '<span class="badge">Solo lectura</span>';
+      return `
       <tr>
         <td class="mono">${esc(r.codigo)}</td>
         <td>${esc(r.huesped)}</td>
@@ -145,12 +172,10 @@
         <td>${fmtFecha(r.fecha)}</td>
         <td class="mono">${fmtMoney(r.valor, r.moneda)}</td>
         <td><span class="stato stato-${claseEstado(r.estado)}">${esc(r.estado)}</span></td>
-        <td class="acciones">
-          <button class="mini-btn edit" data-id="${r.id}" title="Editar" aria-label="Editar reserva"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4l10-10-4-4L4 16v4z"/><path d="M13.5 6.5l4 4"/></svg></button>
-          <button class="mini-btn del" data-id="${r.id}" title="Eliminar" aria-label="Eliminar reserva"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16"/><path d="M9 7V5h6v2"/><path d="M6 7l1 13h10l1-13"/><path d="M10 11v6M14 11v6"/></svg></button>
-        </td>
+        <td class="acciones">${acciones}</td>
       </tr>
-    `).join('');
+    `;
+    }).join('');
 
     // Paginación
     let p = '';
@@ -167,6 +192,7 @@
   // ---------- Abrir formulario ----------
   let lastFormFocus = null;
   function abrirForm(r) {
+    if (!puedeEditar) { notificar('Su rol solo permite consultar la base.', 'error'); return; }
     $('#crudModalTitle').textContent = r ? 'Editar Reserva' : 'Nueva Reserva';
     $('#crudId').value = r ? r.id : '';
     $('#fCodigo').value = r ? (r.codigo || '') : ('RES-' + Date.now().toString().slice(-5));
@@ -211,6 +237,7 @@
   // ---------- Guardar (create/update) ----------
   async function guardar(e) {
     e.preventDefault();
+    if (!puedeEditar) { notificar('Su rol solo permite consultar la base.', 'error'); return; }
     const id = $('#crudId').value;
     const huesped = $('#fHuesped').value.trim();
     if (!huesped) { notificar('El nombre del huésped es obligatorio', 'error'); return; }
@@ -247,6 +274,7 @@
 
   // ---------- Eliminar ----------
   async function eliminar(id) {
+    if (!puedeBorrar) { notificar('Solo un administrador puede eliminar reservas.', 'error'); return; }
     const r = reservasPagina.find(x => x.id === id);
     const nombre = r ? (r.codigo + ' · ' + r.huesped) : ('#' + id);
     if (!confirm('¿Eliminar la reserva ' + nombre + '?')) return;
@@ -287,10 +315,10 @@
     $('#crudBody').addEventListener('click', (e) => {
       const ed = e.target.closest('.edit');
       const del = e.target.closest('.del');
-      if (ed) {
+      if (ed && puedeEditar) {
         const r = reservasPagina.find(x => x.id === Number(ed.dataset.id));
         if (r) abrirForm(r);
-      } else if (del) {
+      } else if (del && puedeBorrar) {
         eliminar(Number(del.dataset.id));
       }
     });
