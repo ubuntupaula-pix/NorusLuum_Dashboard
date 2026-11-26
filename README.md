@@ -20,6 +20,7 @@ Dashboard web hotelero comercial y operativo. Incluye backend API (FastAPI), int
   - **SSO OIDC** opcional (Authorization Code + PKCE), sin alta automática de cuentas.
   - **Cifrado de datos en reposo** para PII (huésped y códigos de respaldo) con Fernet y rotación de claves.
   - **Permisos por propiedad** (`usuario_propiedad`): un usuario sin propiedades asignadas no accede a datos; administradores y cuentas con acceso global ven todo.
+  - **Roles:** `lector` solo consulta (PII oculta y sin escrituras), `editor` consulta y edita reservas/operación/importación, `admin` además gestiona usuarios, propiedades, auditoría, demo y eliminación de reservas.
   - Cabeceras CSP, HSTS en producción, control de origen, CORS cerrado y `/metrics` protegido.
 - **Despliegue:** Docker Compose, migraciones Alembic, contenedores sin root, Caddy con HTTPS automático y respaldo diario de PostgreSQL.
 
@@ -236,7 +237,9 @@ El proyecto incluye el adaptador `api/index.py`, `vercel.json` (función Python 
 - `js/`, `css/`, `index.html`, `login.html`: interfaz web.
 - `vendor/`: dependencias JavaScript empaquetadas localmente.
 - `scripts/create_admin.py`: alta inicial de administrador.
+- `scripts/seed_roles.py`: alta idempotente de `editor` y `lector` con propiedades Norus Luum asignadas (contraseñas desde variables de entorno).
 - `scripts/seed_demo.py`: datos de demostración (>100.000 filas) y archivos de muestra multi-formato.
+- `scripts/seed_ops_demo.py`: operativa de demostración (incidencias con satisfacción, tareas, mantenimiento, inventario, objetos perdidos y checklists) derivada de la demo existente, sin modificar datos previos.
 - `scripts/migrate_to_cloud.py`: copia y verificación de datos hacia PostgreSQL en la nube.
 - `api/index.py`, `vercel.json`: adaptador serverless para Vercel.
 - `compose.yaml`, `compose.cloud.yaml`, `Dockerfile`, `Caddyfile`: despliegue local y en la nube.
