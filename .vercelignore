@@ -1,15 +1,21 @@
 # Entornos y cachés locales
+.git/
 .venv/
 venv/
 .pytest_cache/
 __pycache__/
 *.py[cod]
+node_modules/
 
 # Pruebas y configuración local
 tests/
 .env
 .env.*
 !.env.example
+
+# Entregables documentales (ZIPs de ~105 MB): no son necesarios en runtime
+# y hacen superar el límite de subida de Vercel.
+entregable_final/
 
 # Datos pesados de demostración y SQLite local.
 # En Vercel se usa una base PostgreSQL gestionada mediante DATABASE_URL.
